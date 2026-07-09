@@ -1,0 +1,66 @@
+name: europilot tests
+
+# Only the europilot/ overlay. Upstream openpilot CI (tests.yaml) needs the full
+# comma toolchain and container; this runs on plain Python in under a minute, so
+# pull requests get feedback without building anything.
+
+on:
+  push:
+    branches: [master]
+    paths: ['europilot/**', '.github/workflows/europilot-tests.yaml']
+  pull_request:
+    paths: ['europilot/**', '.github/workflows/europilot-tests.yaml']
+  workflow_dispatch:
+
+concurrency:
+  group: europilot-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      AVANANCE_PROJECT_URL: ${{ secrets.AVANANCE_PROJECT_URL }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install test tooling
+        # europilot.ndw is stdlib-only, but importing europilot/ pulls in flags.py,
+        # which needs pynacl.
+        run: pip install pytest ruff pynacl
+
+      - name: Lint
+        # Scoped to ndw/ on purpose: europilot/test_flags.py has six pre-existing
+        # violations (banned unittest import, unused imports). Widen this to
+        # europilot/ once those are cleaned up.
+        run: ruff check europilot/ndw/
+
+      - name: Test
+        # --noconftest: the repo-root conftest.py imports compiled openpilot
+        # modules that are not built here.
+        # -o addopts: the repo-wide addopts pull in xdist and the openpilot ignore
+        # list, neither of which is installed in this lightweight job.
+        run: pytest europilot/ndw --noconftest -o addopts="-q --durations=5"
+
+      - name: Report result to Avanance
+        # A green run flips tests_updated on the story, which is the gate to "done".
+        # No-op when the secret is absent, so pull requests from forks still pass.
+        if: always()
+        run: |
+          if [ -z "$AVANANCE_PROJECT_URL" ]; then
+            echo "AVANANCE_PROJECT_URL not set, skipping."
+            exit 0
+          fi
+          status=$([ "${{ job.status }}" = "success" ] && echo passed || echo failed)
+          curl -sS --fail-with-body -X POST "$AVANANCE_PROJECT_URL/test-results" \
+            -H 'Content-Type: application/json' \
+            -H 'Accept: application/json' \
+            -d "{\"stories\":[\"EUROPILOT-36\"],\"name\":\"europilot/ndw unit tests\",\"status\":\"$status\"}"
