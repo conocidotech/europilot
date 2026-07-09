@@ -3,7 +3,8 @@
 The unit tests run against a checked-in snapshot, so they keep passing even if
 NDW changes the feed tomorrow. The parser would then silently return nothing and
 the car would quietly lose its dynamic speed limit. This script fetches the real
-feed and fails loudly on drift. Run it on a schedule, not on pull requests.
+feed and fails loudly on drift. Run it on a schedule, not on pull requests. Gateway-side only; the device never
+sees an NDW address.
 """
 
 import collections
@@ -13,8 +14,8 @@ import sys
 import urllib.request
 import zipfile
 
-from europilot.ndw.feed import MSI_URL, parse
-from europilot.ndw.static_index import _read_dbf
+from gateway.ndw.feed import MSI_URL, parse
+from gateway.ndw.static_index import _read_dbf
 
 SHAPEFILE_URL = "https://opendata.ndw.nu/ndw_msi_shapefiles_latest.zip"
 

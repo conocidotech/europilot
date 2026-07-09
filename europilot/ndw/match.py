@@ -1,18 +1,19 @@
 """Match a vehicle pose to the matrix gantry that governs it.
 
-A matrix sign faces oncoming traffic, so its bearing is the direction of travel
-of the lane it hangs above. Given a pose we keep signs whose bearing agrees with
-our heading, project them onto the heading axis, and split them into the gantry
-we last passed (which governs us now) and the next one ahead (which we can use
-to slow down early).
+Pure geometry, no network. A matrix sign faces oncoming traffic, so its bearing
+is the direction of travel of the lane it hangs above. Given a pose we keep signs
+whose bearing agrees with our heading, project them onto the heading axis, and
+split them into the gantry we last passed (which governs us now) and the next one
+ahead (which lets us slow down early).
+
+This runs in the hot path, so it never touches the network. The signs it works on
+come from a region snapshot the client fetched earlier; see client.py.
 """
 
 import math
 from collections import defaultdict
-from dataclasses import dataclass
 
-from .feed import Display
-from .static_index import Sign
+from europilot.ndw.types import Display, Gantry, Match, Sign
 
 EARTH_RADIUS_M = 6_371_000.0
 
@@ -20,55 +21,6 @@ CELL_DEG = 0.02
 SEARCH_RADIUS_M = 2000.0
 MAX_BEARING_DELTA_DEG = 40.0
 MAX_CROSS_TRACK_M = 25.0
-
-
-@dataclass(frozen=True)
-class Gantry:
-    road: str
-    carriageway: str
-    km: float
-    wvk_id: str
-    distance_m: float
-    lanes: dict[int, Display]
-
-    def _speeds(self, red_ring: bool) -> list[int]:
-        return sorted(
-            d.speed
-            for d in self.lanes.values()
-            if d.speed is not None and not d.blocks_lane and d.red_ring is red_ring
-        )
-
-    @property
-    def mandatory_speed(self) -> int | None:
-        """Lowest red-ringed speed: legally binding."""
-        speeds = self._speeds(red_ring=True)
-        return speeds[0] if speeds else None
-
-    @property
-    def advisory_speed(self) -> int | None:
-        """Lowest speed shown without a red ring: advice, not a limit."""
-        speeds = self._speeds(red_ring=False)
-        return speeds[0] if speeds else None
-
-    @property
-    def target_speed(self) -> int | None:
-        """What a controller should aim for: the lowest speed shown either way."""
-        speeds = [s for s in (self.mandatory_speed, self.advisory_speed) if s is not None]
-        return min(speeds) if speeds else None
-
-    @property
-    def flashing(self) -> bool:
-        return any(d.flashing for d in self.lanes.values())
-
-    @property
-    def closed_lanes(self) -> list[int]:
-        return sorted(lane for lane, d in self.lanes.items() if d.blocks_lane)
-
-
-@dataclass(frozen=True)
-class Match:
-    governing: Gantry | None
-    upcoming: Gantry | None
 
 
 def _bearing_delta(a: float, b: float) -> float:

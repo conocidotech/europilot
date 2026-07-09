@@ -1,9 +1,12 @@
-"""Dutch motorway matrix signs (MSI) as a dynamic speed-limit source.
+"""Dutch motorway matrix signs, served by app.europilot.eu.
 
 Merge-safe: this package is new and does not modify any upstream openpilot code.
+It contains no third-party address and no third-party credential; see the binding
+document `architectuur-data-gateway`.
 """
 
-from europilot.ndw.match import Gantry, GantryIndex, Match
-from europilot.ndw.static_index import Sign, load_signs
+from europilot.ndw.client import MatrixSignClient
+from europilot.ndw.match import GantryIndex
+from europilot.ndw.types import Display, Gantry, Match, Sign
 
-__all__ = ["Gantry", "GantryIndex", "Match", "Sign", "load_signs"]
+__all__ = ["Display", "Gantry", "GantryIndex", "Match", "MatrixSignClient", "Sign"]

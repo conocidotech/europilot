@@ -8,27 +8,11 @@ also carries bearing and NWB wegvak.
 
 import gzip
 import urllib.request
-from dataclasses import dataclass
 from xml.etree import ElementTree
 
+from europilot.ndw.types import Display
+
 MSI_URL = "https://opendata.ndw.nu/Matrixsignaalinformatie.xml.gz"
-
-# Aspects that close or divert the lane the sign hangs above.
-BLOCKING = frozenset({"lane_closed", "lane_closed_ahead", "merge_left", "merge_right"})
-
-
-@dataclass(frozen=True)
-class Display:
-    uuid: str
-    aspect: str
-    speed: int | None
-    flashing: bool
-    red_ring: bool
-    ts_state: str
-
-    @property
-    def blocks_lane(self) -> bool:
-        return self.aspect in BLOCKING
 
 
 def _local(tag: str) -> str:

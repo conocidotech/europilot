@@ -31,7 +31,7 @@ jobs:
 
       - name: Check the live NDW feed against the parser
         id: check
-        run: python -m europilot.ndw.schema_check
+        run: python -m gateway.ndw.schema_check
 
       - name: Open an issue on drift
         if: failure()
@@ -53,7 +53,7 @@ jobs:
               labels: ['ndw-canary'],
               body: [
                 'The daily canary found that the live NDW feed no longer matches what',
-                '`europilot/ndw` expects. The parser may be silently returning nothing,',
+                '`gateway/ndw` expects. The parser may be silently returning nothing,',
                 'which means no dynamic speed limit on the road.',
                 '',
                 `Run: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,

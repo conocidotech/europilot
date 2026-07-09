@@ -1,18 +1,25 @@
-"""Tests run against a real NDW snapshot checked into test_data/, so they assert
-on structure and geometry rather than on specific live sign values. Drift in the
-live feed is caught by europilot/ndw/schema_check.py, not here."""
+"""Device-side tests. They run against a region snapshot exactly as the gateway
+would hand it over, so nothing here touches the network.
 
+The most important test in this file is `test_device_never_names_a_third_party`:
+it enforces the binding rule that the device talks to app.europilot.eu and to
+nobody else.
+"""
+
+import json
 import math
 import pathlib
 import time
 
 import pytest
 
-from europilot.ndw.feed import BLOCKING, load
+from europilot.ndw import client as client_mod
+from europilot.ndw.client import MatrixSignClient, tile_of
 from europilot.ndw.match import MAX_BEARING_DELTA_DEG, GantryIndex
-from europilot.ndw.static_index import load_signs
+from europilot.ndw.types import BLOCKING, Display, Sign
 
 DATA = pathlib.Path(__file__).resolve().parent / "test_data"
+PACKAGE = pathlib.Path(__file__).resolve().parent
 EARTH_RADIUS_M = 6_371_000.0
 
 PLAUSIBLE_SPEEDS = {30, 50, 70, 80, 90, 100, 120, 130}
@@ -30,13 +37,18 @@ def offset(lat, lon, bearing, dist_m):
 
 
 @pytest.fixture(scope="module")
-def signs():
-    return load_signs(str(DATA / "msi_shp.zip"))
+def payload():
+    return json.loads((DATA / "region_a2.json").read_text())
 
 
 @pytest.fixture(scope="module")
-def states():
-    return load(str(DATA / "msi.xml.gz"))
+def signs(payload):
+    return [Sign.from_json(s) for s in payload["signs"]]
+
+
+@pytest.fixture(scope="module")
+def states(payload):
+    return {u: Display.from_json(u, d) for u, d in payload["states"].items()}
 
 
 @pytest.fixture(scope="module")
@@ -45,34 +57,111 @@ def index(signs):
 
 
 @pytest.fixture(scope="module")
-def by_gantry(signs, states):
-    out = {}
-    for s in signs:
-        if s.uuid in states:
-            out.setdefault(s.gantry_key, []).append(s)
-    return out
+def bounds(payload):
+    return payload["bounds"]
+
+
+def snapshot_at(bounds, signs, states, age_offset=0.0):
+    return client_mod._Snapshot(
+        (0, 0), bounds, GantryIndex(signs), states, time.monotonic() - age_offset
+    )
 
 
 @pytest.fixture(scope="module")
-def speed_sign(by_gantry, states):
-    """A sign on a gantry that is currently showing a speed on several lanes."""
+def speed_sign(signs, states):
+    """A sign on a gantry currently showing a speed on several lanes."""
+    by_gantry = {}
+    for s in signs:
+        by_gantry.setdefault(s.gantry_key, []).append(s)
     for members in by_gantry.values():
         if len(members) >= 2 and any(states[s.uuid].speed for s in members):
             return members[0]
     pytest.skip("no gantry showing a speed in this snapshot")
 
 
-def test_static_index_is_within_the_netherlands(signs):
-    assert len(signs) > 15_000
+# --- the binding architecture rule ---------------------------------------
+
+
+def test_device_never_names_a_third_party():
+    """The device knows one host: app.europilot.eu. See `architectuur-data-gateway`."""
+    forbidden = ("ndw.nu", "opendata.ndw", "rijkswaterstaat", "openstreetmap", "comma.ai", "mapbox")
+    for path in PACKAGE.glob("*.py"):
+        if path.name.startswith("test_"):
+            continue
+        source = path.read_text().lower()
+        for needle in forbidden:
+            assert needle not in source, f"{path.name} names {needle}"
+
+
+def test_client_default_host_is_the_gateway(monkeypatch):
+    monkeypatch.delenv("EUROPILOT_API_HOST", raising=False)
+    assert client_mod.gateway_host() == "https://app.europilot.eu"
+
+
+# --- cold path / hot path separation --------------------------------------
+
+
+def test_match_returns_none_without_a_snapshot():
+    assert MatrixSignClient(host="https://example.invalid").match(52.0, 5.0, 90.0) is None
+
+
+def test_match_never_hits_the_network(monkeypatch, bounds, signs, states, speed_sign):
+    c = MatrixSignClient(host="https://example.invalid")
+    c._snapshot = snapshot_at(bounds, signs, states)
+
+    def explode(*a, **k):
+        raise AssertionError("hot path opened a socket")
+
+    monkeypatch.setattr(client_mod.urllib.request, "urlopen", explode)
+
+    lat, lon = offset(speed_sign.lat, speed_sign.lon, speed_sign.bearing, -400)
+    assert c.match(lat, lon, speed_sign.bearing) is not None
+
+
+def test_snapshot_answers_across_the_raw_tile_boundary(bounds, signs, states, speed_sign):
+    """The approach to a gantry can straddle a tile edge. The padding exists for
+    exactly this; an exact-tile check would blind the car right before the sign."""
+    lat, lon = offset(speed_sign.lat, speed_sign.lon, speed_sign.bearing, -400)
+    assert tile_of(lat, lon) != tile_of(speed_sign.lat, speed_sign.lon)
+
+    c = MatrixSignClient(host="https://example.invalid")
+    c._snapshot = snapshot_at(bounds, signs, states)
+    m = c.match(lat, lon, speed_sign.bearing)
+    assert m is not None and m.upcoming is not None
+    assert m.upcoming.km == speed_sign.km
+
+
+def test_stale_snapshot_yields_no_hint(bounds, signs, states, speed_sign):
+    c = MatrixSignClient(host="https://example.invalid")
+    c._snapshot = snapshot_at(bounds, signs, states, age_offset=client_mod.STALE_AFTER_S + 1.0)
+    assert c.match(speed_sign.lat, speed_sign.lon, speed_sign.bearing) is None
+
+
+def test_pose_outside_the_snapshot_bounds_yields_no_hint(bounds, signs, states):
+    c = MatrixSignClient(host="https://example.invalid")
+    c._snapshot = snapshot_at(bounds, signs, states)
+    assert c.match(bounds["max_lat"] + 1.0, bounds["max_lon"] + 1.0, 90.0) is None
+
+
+def test_pose_just_inside_the_bounds_edge_yields_no_hint(bounds, signs, states):
+    """Within a search radius of the edge, a matching sign might be missing."""
+    c = MatrixSignClient(host="https://example.invalid")
+    c._snapshot = snapshot_at(bounds, signs, states)
+    edge_lat = bounds["max_lat"] - 0.001
+    assert c.match(edge_lat, (bounds["min_lon"] + bounds["max_lon"]) / 2, 180.0) is None
+
+
+# --- geometry --------------------------------------------------------------
+
+
+def test_region_payload_is_self_consistent(signs, states):
+    assert signs
+    assert len(states) == len(signs)
     for s in signs:
-        assert 50.0 < s.lat < 54.0, s
-        assert 3.0 < s.lon < 7.5, s
-        assert 0.0 <= s.bearing < 360.0, s
-
-
-def test_nearly_every_static_sign_has_a_live_state(signs, states):
-    matched = sum(1 for s in signs if s.uuid in states)
-    assert matched / len(signs) > 0.99
+        assert s.uuid in states
+        assert 50.0 < s.lat < 54.0
+        assert 3.0 < s.lon < 7.5
+        assert 0.0 <= s.bearing < 360.0
 
 
 def test_speed_limits_are_plausible(states):
@@ -93,7 +182,6 @@ def test_governing_gantry_is_the_one_just_passed(index, states, speed_sign):
 
     assert m.governing is not None
     assert m.governing.km == speed_sign.km
-    assert m.governing.distance_m <= 0.0
     assert m.governing.distance_m == pytest.approx(-120.0, abs=5.0)
 
 
@@ -115,7 +203,11 @@ def test_target_speed_prefers_the_lower_of_mandatory_and_advisory(index, states,
     assert g.target_speed == min(shown)
 
 
-def test_closed_lanes_are_excluded_from_the_speed(index, states, by_gantry):
+def test_closed_lanes_are_excluded_from_the_speed(index, states, signs):
+    by_gantry = {}
+    for s in signs:
+        by_gantry.setdefault(s.gantry_key, []).append(s)
+
     for members in by_gantry.values():
         blocked = [s for s in members if states[s.uuid].blocks_lane]
         speeds = [s for s in members if states[s.uuid].speed is not None]

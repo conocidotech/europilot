@@ -7,24 +7,8 @@ and hectometre are physically one portal spanning the lanes.
 
 import struct
 import zipfile
-from dataclasses import dataclass
 
-
-@dataclass(frozen=True)
-class Sign:
-    uuid: str
-    road: str
-    carriageway: str
-    lane: int
-    km: float
-    wvk_id: str
-    bearing: float
-    lat: float
-    lon: float
-
-    @property
-    def gantry_key(self) -> tuple[str, str, float]:
-        return (self.road, self.carriageway, round(self.km, 3))
+from europilot.ndw.types import Sign
 
 
 def _read_dbf(raw: bytes) -> list[dict]:

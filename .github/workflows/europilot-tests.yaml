@@ -7,9 +7,9 @@ name: europilot tests
 on:
   push:
     branches: [master]
-    paths: ['europilot/**', '.github/workflows/europilot-tests.yaml']
+    paths: ['europilot/**', 'gateway/**', '.github/workflows/europilot-tests.yaml']
   pull_request:
-    paths: ['europilot/**', '.github/workflows/europilot-tests.yaml']
+    paths: ['europilot/**', 'gateway/**', '.github/workflows/europilot-tests.yaml']
   workflow_dispatch:
 
 concurrency:
@@ -38,17 +38,17 @@ jobs:
         run: pip install pytest ruff pynacl
 
       - name: Lint
-        # Scoped to ndw/ on purpose: europilot/test_flags.py has six pre-existing
-        # violations (banned unittest import, unused imports). Widen this to
-        # europilot/ once those are cleaned up.
-        run: ruff check europilot/ndw/
+        # europilot/test_flags.py has six pre-existing violations (banned unittest
+        # import, unused imports), so europilot/ as a whole does not lint clean yet.
+        # Widen this once that file is cleaned up.
+        run: ruff check europilot/ndw/ gateway/
 
       - name: Test
         # --noconftest: the repo-root conftest.py imports compiled openpilot
         # modules that are not built here.
         # -o addopts: the repo-wide addopts pull in xdist and the openpilot ignore
         # list, neither of which is installed in this lightweight job.
-        run: pytest europilot/ndw --noconftest -o addopts="-q --durations=5"
+        run: pytest europilot/ndw gateway/ndw --noconftest -o addopts="-q --durations=5"
 
       - name: Report result to Avanance
         # A green run flips tests_updated on the story, which is the gate to "done".
