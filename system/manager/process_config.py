@@ -67,6 +67,9 @@ def and_(*fns):
 procs = [
   DaemonProcess("manage_athenad", "system.athena.manage_athenad", "AthenadPid"),
 
+  # Europilot: device-side data gateway (NDW/OSM/traffic-light/speed context)
+  PythonProcess("europilotd", "europilot.gateway", only_onroad),
+
   NativeProcess("loggerd", "system/loggerd", ["./loggerd"], logging),
   NativeProcess("encoderd", "system/loggerd", ["./encoderd"], only_onroad),
   NativeProcess("stream_encoderd", "system/loggerd", ["./encoderd", "--stream"], notcar),
