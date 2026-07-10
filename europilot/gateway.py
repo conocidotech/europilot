@@ -170,7 +170,9 @@ class GatewayClient:
         ts = data.get("timestamp")
         if ts is None:
             return True  # server did not stamp it; freshness enforced elsewhere
-        now = time.time() if now is None else now
+        # wall-clock on purpose: we compare against the server's unix timestamp
+        # to catch stale/replayed payloads; monotonic time would be meaningless here.
+        now = time.time() if now is None else now  # noqa: TID251
         return abs(now - _float(ts, 0.0)) <= MAX_PAYLOAD_AGE
 
     def fetch(self, position: tuple[float, float] | None = None) -> dict | None:
