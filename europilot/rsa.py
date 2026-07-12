@@ -1,18 +1,16 @@
 #!/usr/bin/env python3
-"""europilot_rsad -- advisory speed limit from the car's Road Sign Assist.
+"""Decode the car's Road Sign Assist speed limit from raw camera CAN.
 
 Toyota/Lexus TSS2 cars read speed-limit signs with their own front camera (RSA,
-Road Sign Assist) and broadcast the result on the camera CAN bus. We decode it
-here and publish it as euSpeedLimit for downstream consumers.
+Road Sign Assist) and broadcast the result on the camera CAN bus. This module
+is the pure decoder; europilot/speed_limit.py reads the CAN and fuses this with
+the other sources.
 
 Why we parse the CAN raw instead of via a DBC: comma's production Toyota DBCs
 don't include the RSA message at all (the signals live only in the reference
 DBC), so there is no CANParser schema to lean on. The two messages are
 byte-aligned, so a raw read is simple and needs no DBC. Decoding semantics match
 the reverse-engineering in sunnypilot/opendbc#289.
-
-Everything published is ADVISORY -- surfaced to the driver, never used to
-hard-limit control.
 
 Merge-safe: this file is new and does not modify upstream openpilot logic.
 """
@@ -33,9 +31,6 @@ MAX_KPH = 200
 MAX_MPH = 120
 
 MPH_TO_KPH = 1.609344
-
-RATE_HZ = 5.0
-SERVICE = "euSpeedLimit"
 
 
 def parse_rsa1(data: bytes) -> tuple[int, int] | None:
@@ -69,45 +64,3 @@ def speed_limit_from_can(data: bytes) -> int | None:
     if parsed is None:
         return None
     return resolve_speed_limit(*parsed)
-
-
-def main():
-    import time
-
-    from cereal import messaging
-
-    # RSA updates at roughly 1 Hz and only when a sign is in view; hold the last
-    # reading briefly so a consumer sees a steady value between frames, but drop
-    # it once stale so we never show a limit the car has moved well past.
-    HOLD_S = 8.0
-
-    pm = messaging.PubMaster([SERVICE])
-    sm = messaging.SubMaster(["can"])
-
-    last_limit: int | None = None
-    last_seen = 0.0
-
-    while True:
-        sm.update(100)
-        now = time.monotonic()
-
-        if sm.updated["can"]:
-            for msg in sm["can"]:
-                if msg.address == RSA1_ADDR:
-                    limit = speed_limit_from_can(bytes(msg.dat))
-                    if limit is not None:
-                        last_limit, last_seen = limit, now
-
-        fresh = last_limit is not None and (now - last_seen) <= HOLD_S
-
-        m = messaging.new_message(SERVICE)
-        dat = m.euSpeedLimit
-        dat.fetchMonoTime = int(now * 1e9)
-        dat.valid = fresh
-        dat.speedLimit = last_limit if fresh else -1
-        dat.source = "rsaCamera" if fresh else "none"
-        pm.send(SERVICE, m)
-
-
-if __name__ == "__main__":
-    main()

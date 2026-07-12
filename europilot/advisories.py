@@ -139,9 +139,14 @@ class GatewayAdvisories:
     def is_flashing(self) -> bool:
         return is_flashing(self._signs())
 
-    def camera_speed_limit(self) -> int | None:
-        """Advisory speed limit (km/h) from the car's RSA camera, or None."""
+    def speed_limit(self) -> int | None:
+        """Fused advisory speed limit (km/h), or None. See speed_limit_source()."""
         sl = self._valid("euSpeedLimit")
         if sl is None or not sl.valid or sl.speedLimit <= 0:
             return None
         return sl.speedLimit
+
+    def speed_limit_source(self) -> str:
+        """Which source the fused speed limit came from (a Source enum name)."""
+        sl = self._valid("euSpeedLimit")
+        return str(sl.source) if sl is not None and sl.valid else "none"
