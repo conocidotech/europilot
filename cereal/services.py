@@ -100,6 +100,9 @@ _services: dict[str, tuple] = {
   # Europilot: advisory speed limit from the car's Road Sign Assist camera
   # (see europilot/rsa.py). Advisory only.
   "euSpeedLimit": (True, 5.),
+  # Europilot: matched OSM road advisory (see europilot/osm/daemon.py).
+  # Advisory only. Name matches the eu-prefixed Event union field.
+  "euMapAdvisory": (True, 4.),
 }
 SERVICE_LIST = {name: Service(*vals) for
                 idx, (name, vals) in enumerate(_services.items())}

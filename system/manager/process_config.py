@@ -69,8 +69,10 @@ procs = [
 
   # Europilot: device-side data gateway (NDW/OSM/traffic-light/speed context)
   PythonProcess("europilotd", "europilot.gateway", only_onroad),
-  # Europilot: one fused advisory speed limit (NDW + RSA camera, later OSM)
+  # Europilot: one fused advisory speed limit (NDW + RSA camera + OSM)
   PythonProcess("europilot_speedlimitd", "europilot.speed_limit", only_onroad),
+  # Europilot: matched OSM road advisory from the synced signed tiles
+  PythonProcess("europilot_osmd", "europilot.osm.daemon", only_onroad),
 
   NativeProcess("loggerd", "system/loggerd", ["./loggerd"], logging),
   NativeProcess("encoderd", "system/loggerd", ["./encoderd"], only_onroad),
