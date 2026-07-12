@@ -37,6 +37,14 @@ ok()   { printf '   \033[1;32m✓\033[0m %s\n' "$*"; }
 warn() { printf '   \033[1;33m!\033[0m %s\n' "$*"; }
 die()  { printf '\n\033[1;31mABORT:\033[0m %s\n' "$*" >&2; exit 1; }
 
+# openpilot's Python deps live in a uv-managed venv, so every python/scons call
+# below goes through `uv run`, not the system python3 (which lacks capnp/zmq).
+# Route uv's cache + temp onto /data: the system partitions (/ and /home) on a
+# comma four are small and often nearly full, which makes uv fail with ENOSPC.
+export UV_CACHE_DIR="${UV_CACHE_DIR:-/data/uv_cache}"
+export TMPDIR="${TMPDIR:-/data/tmp}"
+mkdir -p "$UV_CACHE_DIR" "$TMPDIR" 2>/dev/null || true
+
 # ---------------------------------------------------------------------------
 # Phase 0 — preflight & safety
 # ---------------------------------------------------------------------------
@@ -48,7 +56,7 @@ ok "openpilot checkout: $OP_DIR"
 uname -m | grep -q 'aarch64' && ok "arch: aarch64 (device)" || warn "arch is not aarch64 — is this really the comma four?"
 
 # Refuse to touch anything while the car is onroad / ignition on.
-onroad="$(python3 - <<'PY' 2>/dev/null || echo unknown
+onroad="$(uv run python - <<'PY' 2>/dev/null || echo unknown
 from openpilot.common.params import Params
 p = Params()
 print("onroad" if p.get_bool("IsOnroad") else "offroad")
@@ -95,7 +103,7 @@ fi
 # ---------------------------------------------------------------------------
 log "Phase 1: pause the auto-updater (so it can't overwrite the branch)"
 # Best-effort: stop the running updater and set the disable param. Reversible.
-python3 - <<'PY' 2>/dev/null || true
+uv run python - <<'PY' 2>/dev/null || true
 from openpilot.common.params import Params
 Params().put_bool("DisableUpdates", True)
 print("   set Params DisableUpdates=True")
@@ -128,10 +136,10 @@ ok "checked out $BRANCH @ ${NEW_SHA:0:10}"
 # Phase 3 — build (the real native cereal/capnp compile)
 # ---------------------------------------------------------------------------
 log "Phase 3: scons build (this recompiles cereal with the new schema; can take a while)"
-if scons -j"$(nproc)"; then
+if uv run scons -j"$(nproc)"; then
   ok "scons build SUCCEEDED — cereal + affected code compiled natively"
 else
-  die "scons build FAILED — see output above. Roll back with: git checkout $PREV_REF && scons -j\$(nproc)"
+  die "scons build FAILED — see output above. Roll back with: git checkout $PREV_REF && uv run scons -j\$(nproc)"
 fi
 
 # ---------------------------------------------------------------------------
@@ -142,7 +150,7 @@ log "Phase 4: smoke test — run the daemons offroad and watch the bus (${SMOKE_
 # here does not conflict with anything.
 declare -a PIDS=()
 for mod in europilot.gateway europilot.speed_limit europilot.osm.daemon; do
-  python3 -m "$mod" >"/tmp/${mod//./_}.log" 2>&1 &
+  uv run python -m "$mod" >"/tmp/${mod//./_}.log" 2>&1 &
   PIDS+=($!)
   ok "started $mod (pid $!)"
 done
@@ -150,7 +158,7 @@ cleanup() { for p in "${PIDS[@]:-}"; do kill "$p" 2>/dev/null || true; done; }
 trap cleanup EXIT
 sleep 2   # let them come up
 
-python3 - "$SMOKE_SECONDS" <<'PY'
+uv run python - "$SMOKE_SECONDS" <<'PY'
 import sys, time
 from cereal import messaging
 window = int(sys.argv[1])
@@ -194,7 +202,7 @@ log "Phase 4b: control + UI integration — does the new upstream code load & in
 # the longitudinal planner, the Params registry and the UI overlay. A fault there
 # fails a SAFETY-CRITICAL process (plannerd) -> processNotRunning -> disengage, so
 # validate they load and construct here, offroad, rather than while driving.
-python3 - <<'PY'
+uv run python - <<'PY'
 import importlib, sys
 fail = []
 
@@ -262,7 +270,7 @@ cat <<EOF
        goes valid with real tiles
      - keep the camera easing OFF for the first onroad drives; enable it only after
        the advisories look sane, on a quiet road, supervised:
-         python3 -c "from openpilot.common.params import Params; Params().put_bool('EuropilotCameraEasing', True)"  # then reboot
+         uv run python -c "from openpilot.common.params import Params; Params().put_bool('EuropilotCameraEasing', True)"  # then reboot
      - supervised on-road, hand ready to take over
 
    Security: FORK_REMOTE (with its token) is now stored in $OP_DIR/.git/config.
@@ -270,8 +278,8 @@ cat <<EOF
      git remote remove $REMOTE_NAME
 
    Rollback (restore the device to how it was):
-     cd $OP_DIR && git checkout $PREV_REF && scons -j\$(nproc)
-     python3 -c "from openpilot.common.params import Params; Params().put_bool('DisableUpdates', False)"
+     cd $OP_DIR && git checkout $PREV_REF && uv run scons -j\$(nproc)
+     uv run python -c "from openpilot.common.params import Params; Params().put_bool('DisableUpdates', False)"
      sudo reboot
 
 EOF
