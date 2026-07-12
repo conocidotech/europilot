@@ -29,12 +29,34 @@ RSA_HOLD_S = 8.0
 
 # Fusion priority, highest authority/currency first. A legally-binding live
 # matrix sign beats a sign the camera physically read now, which beats live
-# matrix *advice*, which beats the static map. Append new sources here.
-PRIORITY = ("ndwMandatory", "rsaCamera", "ndwAdvisory", "osm")
+# matrix *advice*, which beats the static map, which beats the time-of-day
+# default. Append new sources here.
+PRIORITY = ("ndwMandatory", "rsaCamera", "ndwAdvisory", "osm", "timeOfDay")
+
+# NL motorways carry a 100 km/h maximum from 06:00 to 19:00 (nationwide since
+# 2020). Outside that window the limit is road-specific (100/120/130) and posted,
+# so we don't guess it. The daytime 100 is the only safe inference, and only a
+# weak fallback: any posted source outranks it.
+DAY_START_H = 6
+DAY_END_H = 19
+MOTORWAY_DAY_KMH = 100
+
+
+def motorway_day_limit(road_class: str, hour: int | None) -> int | None:
+    """The implicit NL daytime motorway limit (km/h), or None when it doesn't apply.
+
+    Fills the gap the server leaves open: an implicit 'NL:motorway' limit is
+    time-dependent, so the tile carries no number. Fires only on a motorway,
+    only 06:00-19:00, and only as fusion's lowest-priority fallback.
+    """
+    if road_class != "motorway" or hour is None:
+        return None
+    return MOTORWAY_DAY_KMH if DAY_START_H <= hour < DAY_END_H else None
 
 
 def fuse_speed_limit(*, ndw_mandatory: int | None = None, rsa_camera: int | None = None,
-                     ndw_advisory: int | None = None, osm: int | None = None) -> tuple[int | None, str]:
+                     ndw_advisory: int | None = None, osm: int | None = None,
+                     time_of_day: int | None = None) -> tuple[int | None, str]:
     """Pick one advisory limit (km/h) + its source from the candidates.
 
     Returns ``(limit, source)`` where source is a euSpeedLimit.Source name, or
@@ -45,12 +67,23 @@ def fuse_speed_limit(*, ndw_mandatory: int | None = None, rsa_camera: int | None
         "rsaCamera": rsa_camera,
         "ndwAdvisory": ndw_advisory,
         "osm": osm,
+        "timeOfDay": time_of_day,
     }
     for source in PRIORITY:
         value = candidates[source]
         if value is not None and value > 0:
             return value, source
     return None, "none"
+
+
+def _nl_hour() -> int | None:
+    """Current hour (0-23) in NL local time, or None if the clock/tz is unavailable."""
+    try:
+        import datetime
+        from zoneinfo import ZoneInfo
+        return datetime.datetime.now(ZoneInfo("Europe/Amsterdam")).hour
+    except Exception:
+        return None
 
 
 def main():
@@ -88,18 +121,22 @@ def main():
             if sm.valid["euNdwMatrixSigns"] and sm.recv_frame["euNdwMatrixSigns"] > 0:
                 signs = sm["euNdwMatrixSigns"]
 
-            # OSM posted limit from the matched map advisory (europilot_osmd).
+            # OSM posted limit + road class from the matched map advisory.
             osm = None
+            road_class = ""
             if sm.valid["euMapAdvisory"] and sm.recv_frame["euMapAdvisory"] > 0:
                 adv = sm["euMapAdvisory"]
-                if adv.valid and adv.speedLimit > 0:
-                    osm = adv.speedLimit
+                if adv.valid:
+                    road_class = adv.roadClass
+                    if adv.speedLimit > 0:
+                        osm = adv.speedLimit
 
             limit, source = fuse_speed_limit(
                 ndw_mandatory=mandatory_speed(signs),
                 rsa_camera=rsa,
                 ndw_advisory=advisory_speed(signs),
                 osm=osm,
+                time_of_day=motorway_day_limit(road_class, _nl_hour()),
             )
 
             m = messaging.new_message(SERVICE)

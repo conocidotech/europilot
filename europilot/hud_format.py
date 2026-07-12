@@ -12,6 +12,7 @@ _SOURCE_BADGE = {
     "ndwAdvisory": "NDW",
     "rsaCamera": "CAM",
     "osm": "KAART",
+    "timeOfDay": "DAG",
 }
 
 # Above this a shown "limit" is almost certainly a bad read; better to show
