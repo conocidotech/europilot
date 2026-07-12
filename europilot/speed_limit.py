@@ -19,6 +19,7 @@ Merge-safe: this file is new and does not modify upstream openpilot logic.
 
 from europilot.rsa import speed_limit_from_can, RSA1_ADDR
 from europilot.advisories import mandatory_speed, advisory_speed
+from europilot.cruise import cruise_target_kph
 
 RATE_HZ = 5.0
 SERVICE = "euSpeedLimit"
@@ -94,7 +95,7 @@ def main():
     from openpilot.common.swaglog import cloudlog
 
     pm = messaging.PubMaster([SERVICE])
-    sm = messaging.SubMaster(["can", "euNdwMatrixSigns", "euMapAdvisory"])
+    sm = messaging.SubMaster(["can", "euNdwMatrixSigns", "euMapAdvisory", "carState"])
     rk = Ratekeeper(RATE_HZ, print_delay_threshold=None)
 
     rsa_limit: int | None = None
@@ -121,15 +122,20 @@ def main():
             if sm.valid["euNdwMatrixSigns"] and sm.recv_frame["euNdwMatrixSigns"] > 0:
                 signs = sm["euNdwMatrixSigns"]
 
-            # OSM posted limit + road class from the matched map advisory.
+            # OSM posted limit + road class + next camera from the map advisory.
             osm = None
             road_class = ""
+            cam_distance = None
+            cam_limit = None
             if sm.valid["euMapAdvisory"] and sm.recv_frame["euMapAdvisory"] > 0:
                 adv = sm["euMapAdvisory"]
                 if adv.valid:
                     road_class = adv.roadClass
                     if adv.speedLimit > 0:
                         osm = adv.speedLimit
+                    if adv.cameraDistance >= 0:
+                        cam_distance = adv.cameraDistance
+                        cam_limit = adv.cameraLimit if adv.cameraLimit > 0 else None
 
             limit, source = fuse_speed_limit(
                 ndw_mandatory=mandatory_speed(signs),
@@ -139,12 +145,21 @@ def main():
                 time_of_day=motorway_day_limit(road_class, _nl_hour()),
             )
 
+            # The one control-affecting output: ease cruise toward the enforced
+            # limit approaching a camera. -1 unless easing is active this cycle.
+            v_ego_kph = sm["carState"].vEgo * 3.6 if sm.valid["carState"] else 0.0
+            cruise_target = cruise_target_kph(
+                camera_distance_m=cam_distance, camera_limit=cam_limit,
+                fused_limit_kph=limit, v_ego_kph=v_ego_kph,
+            )
+
             m = messaging.new_message(SERVICE)
             dat = m.euSpeedLimit
             dat.fetchMonoTime = int(now * 1e9)
             dat.valid = limit is not None
             dat.speedLimit = limit if limit is not None else -1
             dat.source = source
+            dat.cruiseTarget = cruise_target if cruise_target is not None else -1
             pm.send(SERVICE, m)
         except Exception:
             cloudlog.exception("europilot_speedlimitd iteration failed; publishing fail-closed")
@@ -153,6 +168,7 @@ def main():
                 m.euSpeedLimit.valid = False
                 m.euSpeedLimit.speedLimit = -1
                 m.euSpeedLimit.source = "none"
+                m.euSpeedLimit.cruiseTarget = -1
                 pm.send(SERVICE, m)
             except Exception:
                 cloudlog.exception("europilot_speedlimitd could not publish fail-closed heartbeat")

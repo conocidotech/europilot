@@ -106,11 +106,17 @@ struct CustomReserved2 @0xf35cc4560bbf6ec2 {
 struct SpeedLimit @0xda96579883444c35 {
   # Resolved advisory speed limit, fused from every available source by
   # europilot/speed_limit.py. `source` says which source the value came from.
-  # Advisory only -- surfaced to the driver, never used to hard-limit control.
+  #
+  # `speedLimit` is advisory only -- surfaced to the driver, never authoritative
+  # for control. `cruiseTarget` is the ONE control-affecting field: when the
+  # opt-in camera-easing is enabled, the longitudinal planner caps the ACC set
+  # speed to it (min()) approaching a speed camera. Bounded (the MPC clips it to
+  # a comfort taper, never a hard brake), engaged-only, released by the gas pedal.
   fetchMonoTime @0 :UInt64;   # monotonic ns when this was published
   valid @1 :Bool;
-  speedLimit @2 :Int16;       # km/h; -1 unknown
+  speedLimit @2 :Int16;       # km/h; -1 unknown -- ADVISORY (display/fusion)
   source @3 :Source;
+  cruiseTarget @4 :Int16;     # km/h to cap cruise at near a camera; -1 = no easing
 
   # Ordered roughly by authority/currency. Append new sources; never renumber.
   enum Source {

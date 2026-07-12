@@ -66,3 +66,16 @@ def test_source_names_are_valid_capnp_enumerants():
     # every source fuse() can emit must exist in euSpeedLimit.Source
     valid = {"none", "rsaCamera", "ndwMandatory", "ndwAdvisory", "osm", "timeOfDay"}
     assert set(PRIORITY) | {"none"} == valid
+
+
+def test_cruise_target_field_exists_on_the_schema():
+    import pytest
+    pytest.importorskip("capnp")
+    import capnp
+    from pathlib import Path
+    capnp.remove_import_hook()
+    schema = capnp.load(str(Path(__file__).resolve().parents[1] / "cereal" / "custom.capnp"))
+    m = schema.SpeedLimit.new_message()
+    m.cruiseTarget = 80   # raises if the field is missing/misnumbered
+    with schema.SpeedLimit.from_bytes(m.to_bytes()) as r:
+        assert r.cruiseTarget == 80
