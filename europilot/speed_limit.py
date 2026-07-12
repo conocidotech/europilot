@@ -60,7 +60,7 @@ def main():
     from openpilot.common.realtime import Ratekeeper
 
     pm = messaging.PubMaster([SERVICE])
-    sm = messaging.SubMaster(["can", "euNdwMatrixSigns"])
+    sm = messaging.SubMaster(["can", "euNdwMatrixSigns", "euMapAdvisory"])
     rk = Ratekeeper(RATE_HZ, print_delay_threshold=None)
 
     rsa_limit: int | None = None
@@ -84,12 +84,18 @@ def main():
         if sm.valid["euNdwMatrixSigns"] and sm.recv_frame["euNdwMatrixSigns"] > 0:
             signs = sm["euNdwMatrixSigns"]
 
-        # OSM plugs in here once EUROPILOT-35 lands.
+        # OSM posted limit from the matched map advisory (europilot_osmd).
+        osm = None
+        if sm.valid["euMapAdvisory"] and sm.recv_frame["euMapAdvisory"] > 0:
+            adv = sm["euMapAdvisory"]
+            if adv.valid and adv.speedLimit > 0:
+                osm = adv.speedLimit
+
         limit, source = fuse_speed_limit(
             ndw_mandatory=mandatory_speed(signs),
             rsa_camera=rsa,
             ndw_advisory=advisory_speed(signs),
-            osm=None,
+            osm=osm,
         )
 
         m = messaging.new_message(SERVICE)
