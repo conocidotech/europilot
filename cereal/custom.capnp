@@ -79,6 +79,11 @@ struct MapAdvisory @0xaedffd8f31e7b55d {
   cyclestreet @9 :Bool;
   distance @10 :Float32;       # lateral meters to the matched road; -1 unknown
 
+  # Next speed camera / trajectcontrole ahead on the matched road (advisory).
+  cameraDistance @11 :Float32; # along-road meters to it; -1 none ahead
+  cameraLimit @12 :Int16;      # enforced km/h there; -1 unknown (use the road limit)
+  cameraKind @13 :Text;        # "fixed" | "section" | "" none
+
   # Three-valued on purpose: unknown is NOT absent (no tag and no parallel path
   # seen), carried through from the tile so the device never reads silence as
   # "no bike path here".

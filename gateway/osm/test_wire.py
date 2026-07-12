@@ -14,6 +14,7 @@ from gateway.osm.osm_source import parse_full
 from gateway.osm.tiles import build_tiles_full
 
 RESIDENTIAL = (Path(__file__).parent / "test_data" / "residential.osm").read_bytes()
+CAMERAS = (Path(__file__).parent / "test_data" / "cameras.osm").read_bytes()
 
 # A road A record like build_tiles_full stamps: residential, 30 km/h, cycleway
 # on the left only, calming present.
@@ -58,6 +59,21 @@ class TestNormalizeRoad:
         n = wire.normalize_road(rec)
         assert n["cyclewayLeft"] == "unknown" and n["inResidential"] is False
         assert n["name"] == ""
+
+    def test_camera_less_road_omits_the_key(self):
+        # keeps the content hash identical to before cameras existed -> no needless
+        # re-sync of every camera-free tile.
+        assert "cameras" not in wire.normalize_road(ROAD_A)
+
+    def test_cameras_normalized_and_sorted(self):
+        rec = {**ROAD_A, "cameras": [
+            {"lat": 52.0001, "lon": 5.010, "maxspeed": 100, "kind": "fixed"},
+            {"lat": 52.000, "lon": 5.002, "maxspeed": 100, "kind": "section"},
+        ]}
+        cams = wire.normalize_road(rec)["cameras"]
+        assert [c["point"] for c in cams] == [[520000000, 50020000], [520001000, 50100000]]
+        assert cams[0]["kind"] == "section" and cams[1]["kind"] == "fixed"
+        assert cams[0]["maxspeed"] == 100
 
 
 class TestNormalizeTileAndHash:
@@ -131,3 +147,21 @@ class TestCapnpRoundTrip:
         assert road_a["comfortSpeed"] == 30
         assert road_a["cyclewayLeft"] == "present"
         assert len(road_a["points"]) >= 2
+
+    def test_cameras_survive_the_round_trip(self):
+        rec = {**ROAD_A, "cameras": [
+            {"lat": 52.0001, "lon": 5.010, "maxspeed": 100, "kind": "fixed"}]}
+        out = wire.from_capnp_bytes(wire.serialize_tile(208, 20, [rec]))
+        cams = out["roads"][0]["cameras"]
+        assert len(cams) == 1
+        assert cams[0]["point"] == [520001000, 50100000]
+        assert cams[0]["maxspeed"] == 100 and cams[0]["kind"] == "fixed"
+
+    def test_cameras_stamped_by_build_tiles_full(self):
+        tiles = build_tiles_full(parse_full(CAMERAS))
+        records = [r for recs in tiles.values() for r in recs]
+        mainline = next(r for r in records if r["id"] == 200)
+        kinds = {c["kind"] for c in mainline["cameras"]}
+        assert kinds == {"fixed", "section"}   # the standalone camera + the section
+        ramp = next(r for r in records if r["id"] == 201)
+        assert ramp["cameras"] and all(c["kind"] == "fixed" for c in ramp["cameras"])
