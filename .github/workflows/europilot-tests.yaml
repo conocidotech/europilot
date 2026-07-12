@@ -38,9 +38,9 @@ jobs:
           python-version: '3.12'
 
       - name: Install test tooling
-        # europilot.ndw is stdlib-only, but importing europilot/ pulls in
-        # flags.py and gateway.py, which need pynacl.
-        run: pip install pytest ruff pynacl
+        # europilot imports flags.py/gateway.py (pynacl); pycapnp (a root
+        # dependency, prebuilt wheel) exercises the OSM tile wire format.
+        run: pip install pytest ruff pynacl pycapnp
 
       - name: Lint
         # Both overlays lint clean; keep it that way.
@@ -51,8 +51,8 @@ jobs:
         #   modules that are not built in this lightweight job.
         # -o addopts: drop the repo-wide addopts (xdist, the openpilot ignore
         #   list, pytest-cpp), none of which are installed here.
-        # `europilot` covers europilot/ndw too.
-        run: pytest europilot gateway/ndw --noconftest -o addopts="-q --durations=5"
+        # `europilot` covers ndw + osm; `gateway` covers ndw + osm.
+        run: pytest europilot gateway --noconftest -o addopts="-q --durations=5"
 
       - name: Report result to Avanance
         # No-op unless both the secret and the story IDs are set, so PRs from
