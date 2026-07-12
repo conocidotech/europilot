@@ -23,7 +23,7 @@ functions work equally on capnp readers and test doubles.
 Merge-safe: this file is new and does not modify upstream openpilot logic.
 """
 
-SERVICES = ["euNdwMatrixSigns"]
+SERVICES = ["euNdwMatrixSigns", "euSpeedLimit"]
 
 
 def _gantry(signs, which: str):
@@ -112,11 +112,14 @@ class GatewayAdvisories:
     def update(self) -> None:
         self._ensure().update(0)
 
-    def _signs(self):
+    def _valid(self, service: str):
         sm = self._ensure()
-        if not sm.valid["euNdwMatrixSigns"] or sm.recv_frame["euNdwMatrixSigns"] == 0:
+        if not sm.valid[service] or sm.recv_frame[service] == 0:
             return None
-        return sm["euNdwMatrixSigns"]
+        return sm[service]
+
+    def _signs(self):
+        return self._valid("euNdwMatrixSigns")
 
     def mandatory_speed(self) -> int | None:
         return mandatory_speed(self._signs())
@@ -135,3 +138,10 @@ class GatewayAdvisories:
 
     def is_flashing(self) -> bool:
         return is_flashing(self._signs())
+
+    def camera_speed_limit(self) -> int | None:
+        """Advisory speed limit (km/h) from the car's RSA camera, or None."""
+        sl = self._valid("euSpeedLimit")
+        if sl is None or not sl.valid or sl.speedLimit <= 0:
+            return None
+        return sl.speedLimit

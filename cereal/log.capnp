@@ -2564,7 +2564,7 @@ struct Event {
     euNdwMatrixSigns @107 :Custom.NdwMatrixSigns;
     customReserved1 @108 :Custom.CustomReserved1;
     customReserved2 @109 :Custom.CustomReserved2;
-    customReserved3 @110 :Custom.CustomReserved3;
+    euSpeedLimit @110 :Custom.SpeedLimit;
     customReserved4 @111 :Custom.CustomReserved4;
     customReserved5 @112 :Custom.CustomReserved5;
     customReserved6 @113 :Custom.CustomReserved6;
