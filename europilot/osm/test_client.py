@@ -15,6 +15,7 @@ pytest.importorskip("capnp")
 
 from nacl.signing import SigningKey
 
+import europilot.osm.client as client_mod
 from europilot.osm.client import OsmTileClient
 from gateway.osm.delivery import TileStore
 from gateway.osm.grid import group_of, tile_of
@@ -126,3 +127,38 @@ class TestSyncAndMatch:
                                transport=lambda url, headers: (0, b"", ""))
         assert client.sync(*POSE) is False
         assert client.match(*POSE, heading=90.0).valid is False
+
+
+class TestPollGroupAware:
+    def test_freshness_is_per_group(self):
+        client = OsmTileClient(host="http://gw", pubkey_b64=PUB_B64, transport=Transport(_store()))
+        assert client.sync(*POSE) is True
+        assert client._group_fresh(GROUP) is True
+        # a different 2-degree group is not fresh just because we synced this one
+        assert client._group_fresh((GROUP[0] + 2, GROUP[1] + 2)) is False
+
+    def test_poll_refreshes_after_crossing_a_group_boundary(self, monkeypatch):
+        # Run the background refresh synchronously so its effect is observable.
+        class _SyncThread:
+            def __init__(self, target, daemon=None):
+                self._target = target
+
+            def start(self):
+                self._target()
+
+        monkeypatch.setattr(client_mod.threading, "Thread", _SyncThread)
+
+        tr = Transport(_store())
+        client = OsmTileClient(host="http://gw", pubkey_b64=PUB_B64, transport=tr)
+
+        client.poll(*POSE)                              # first poll syncs GROUP
+        assert client.match(*POSE, heading=90.0).valid is True
+        n = len(tr.calls)
+
+        client.poll(*POSE)                              # same group, still fresh
+        assert len(tr.calls) == n                       # no new fetch
+
+        far = (POSE[0] + 3.0, POSE[1] + 3.0)
+        assert group_of(*tile_of(*far)) != GROUP
+        client.poll(*far)                               # crossed a group boundary
+        assert len(tr.calls) > n                        # a sync was attempted, not skipped
