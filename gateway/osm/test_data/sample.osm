@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<osm version="0.6" generator="europilot-test">
+  <node id="1" lat="52.090" lon="5.110"/>
+  <node id="2" lat="52.100" lon="5.120"/>
+  <node id="3" lat="52.050" lon="5.050"/>
+  <node id="4" lat="52.055" lon="5.055"/>
+  <node id="5" lat="52.070" lon="5.080"/>
+  <node id="6" lat="52.075" lon="5.085"/>
+  <node id="7" lat="51.900" lon="4.900"/>
+  <node id="8" lat="51.905" lon="4.905"/>
+  <way id="100">
+    <nd ref="1"/><nd ref="2"/>
+    <tag k="highway" v="motorway"/>
+    <tag k="maxspeed" v="100"/>
+    <tag k="lanes" v="3"/>
+  </way>
+  <way id="101">
+    <nd ref="3"/><nd ref="4"/>
+    <tag k="highway" v="residential"/>
+    <tag k="maxspeed" v="30"/>
+    <tag k="name" v="Dorpsstraat"/>
+  </way>
+  <way id="102">
+    <nd ref="5"/><nd ref="6"/>
+    <tag k="highway" v="cycleway"/>
+  </way>
+  <way id="103">
+    <nd ref="5"/><nd ref="6"/>
+    <tag k="highway" v="primary"/>
+    <tag k="oneway" v="yes"/>
+    <tag k="lanes" v="2"/>
+    <tag k="maxspeed" v="50"/>
+  </way>
+  <way id="104">
+    <nd ref="7"/><nd ref="8"/>
+    <tag k="highway" v="residential"/>
+    <tag k="zone:maxspeed" v="NL:zone30"/>
+  </way>
+</osm>

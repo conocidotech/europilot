@@ -93,6 +93,16 @@ _services: dict[str, tuple] = {
   "livestreamRoadEncodeData": (False, 20., None, QueueSize.MEDIUM),
   "livestreamDriverEncodeData": (False, 20., None, QueueSize.MEDIUM),
   "customReservedRawData0": (True, 0.),
+
+  # Europilot: matched NDW matrix-sign state (see europilot/gateway.py).
+  # Advisory only. Name matches the eu-prefixed Event union field.
+  "euNdwMatrixSigns": (True, 4.),
+  # Europilot: advisory speed limit from the car's Road Sign Assist camera
+  # (see europilot/rsa.py). Advisory only.
+  "euSpeedLimit": (True, 5.),
+  # Europilot: matched OSM road advisory (see europilot/osm/daemon.py).
+  # Advisory only. Name matches the eu-prefixed Event union field.
+  "euMapAdvisory": (True, 4.),
 }
 SERVICE_LIST = {name: Service(*vals) for
                 idx, (name, vals) in enumerate(_services.items())}
