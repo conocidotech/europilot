@@ -29,7 +29,7 @@ from gateway.ndw.sign import verify_snapshot
 # the device verifies each snapshot against it and trusts no unsigned feed.
 # Rotating it strands any device still pinned to the old key -- change it only in
 # a deliberate key rotation, in step with the gateway.
-SNAPSHOT_PUBKEY_B64 = "ArIHIJnQDJwuxgBTv1gLpLpYn53RQNPWvF6pBvQ09Gw="
+SNAPSHOT_PUBKEY_B64 = "Pw0CvtpvxfI3G6skI3LMtILJpfvZ/AyH19Vr4HvOUmU="
 
 # Same tile size as the OSM decision doc (mapd's AREA_BOX_DEGREES).
 TILE_DEG = 0.25

@@ -12,7 +12,8 @@ must never see:
 | `/health` | NDW service | liveness + feed freshness |
 
 Everything is **Ed25519-signed with one key**; the device pins the public half
-(`ArIHIJnQDJwuxgBTv1gLpLpYn53RQNPWvF6pBvQ09Gw=`) and trusts nothing unsigned, so
+(`Pw0CvtpvxfI3G6skI3LMtILJpfvZ/AyH19Vr4HvOUmU=`, the gateway's one signing
+identity — the same key the flags API already uses) and trusts nothing unsigned, so
 a bug or a TLS middlebox can't feed the car a wrong (even "legally binding")
 speed. Until the gateway is live the device's OSM/NDW/camera advisories are all
 `valid=false` and the HUD stays blank — this is what turns the lights on.

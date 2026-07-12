@@ -3,7 +3,7 @@
 
 The gateway signs NDW snapshots, OSM manifests and feature flags with one
 private key; every device pins the matching public half (currently
-`ArIHIJnQDJwuxgBTv1gLpLpYn53RQNPWvF6pBvQ09Gw=` in europilot/{ndw,osm}/client.py
+`Pw0CvtpvxfI3G6skI3LMtILJpfvZ/AyH19Vr4HvOUmU=` in europilot/{ndw,osm}/client.py
 and europilot/flags.py). This tool never prints a private key you didn't ask
 for and never touches the environment or disk:
 
@@ -23,7 +23,7 @@ import sys
 
 from nacl.signing import SigningKey
 
-PINNED_PUBKEY_B64 = "ArIHIJnQDJwuxgBTv1gLpLpYn53RQNPWvF6pBvQ09Gw="
+PINNED_PUBKEY_B64 = "Pw0CvtpvxfI3G6skI3LMtILJpfvZ/AyH19Vr4HvOUmU="
 
 
 def _pubkey_b64(seed_b64: str) -> str:
