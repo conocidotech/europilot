@@ -62,7 +62,7 @@ class OsmTileClient:
         self._roads: dict[tuple[int, int], list] = {}
         self._hash: dict[tuple[int, int], str] = {}
         self._group_etag: dict[tuple[int, int], str] = {}
-        self._synced_at: float | None = None
+        self._synced_at: dict[tuple[int, int], float] = {}
         self._refreshing = False
 
     # --- cold path -------------------------------------------------------
@@ -87,7 +87,7 @@ class OsmTileClient:
         status, body, _ = self._get(
             f"{self._host}/osm/manifest?group_lat={group[0]}&group_lon={group[1]}", headers)
         if status == 304:
-            self._mark_synced()
+            self._mark_synced(group)
             return True
         if status != 200 or not body:
             return False
@@ -106,7 +106,7 @@ class OsmTileClient:
         self._prune(group, manifest)
         with self._lock:
             self._group_etag[group] = manifest_etag(manifest)
-        self._mark_synced()
+        self._mark_synced(group)
         return True
 
     def _fetch_tile(self, ref) -> None:
@@ -132,16 +132,27 @@ class OsmTileClient:
                 self._roads.pop(t, None)
                 self._hash.pop(t, None)
 
-    def _mark_synced(self) -> None:
+    def _mark_synced(self, group: tuple[int, int]) -> None:
         with self._lock:
-            self._synced_at = time.monotonic()
+            self._synced_at[group] = time.monotonic()
+
+    def _group_fresh(self, group: tuple[int, int]) -> bool:
+        """Whether this group was synced recently enough to skip a refresh.
+
+        Freshness is per-group, not global: crossing a 2-degree group boundary
+        must trigger a sync for the new group even though the old one was synced a
+        moment ago. (The single global timestamp this replaces left the new group
+        unsynced -- and the OSM advisory silently dead -- for up to
+        REFRESH_INTERVAL_S after every boundary crossing.)
+        """
+        ts = self._synced_at.get(group)
+        return ts is not None and (time.monotonic() - ts) < REFRESH_INTERVAL_S
 
     def poll(self, lat: float, lon: float) -> None:
         """Low-rate cold-path trigger: refresh in the background when stale."""
+        group = group_of(*tile_of(lat, lon))
         with self._lock:
-            fresh = self._synced_at is not None and \
-                time.monotonic() - self._synced_at < REFRESH_INTERVAL_S
-            if fresh or self._refreshing:
+            if self._refreshing or self._group_fresh(group):
                 return
             self._refreshing = True
 
