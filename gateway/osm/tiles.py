@@ -17,7 +17,12 @@ import json
 
 from gateway.osm import tags as osm_tags
 from gateway.osm.grid import centroid, tile_of
-from gateway.osm.osm_source import Way
+from gateway.osm.osm_source import OsmData, Way
+from gateway.osm.spatial import (
+    combine_side, comfort_speed, cyclestreet, cycleway_geometry_sides,
+    cycleway_tag_sides, density_per_km, in_residential, residential_polygons,
+    residential_score, tagged_points,
+)
 
 
 def _way_record(way: Way, nodes: dict[int, tuple[float, float]]) -> dict | None:
@@ -40,6 +45,44 @@ def build_tiles(nodes: dict[int, tuple[float, float]], ways: list[Way]) -> dict[
             continue
         tile = tile_of(*centroid(record["coords"]))
         tiles.setdefault(tile, []).append(record)
+    return tiles
+
+
+def build_tiles_full(data: OsmData) -> dict[tuple[int, int], list[dict]]:
+    """build_tiles plus the spatial-join attributes stamped on each way record."""
+    polygons = residential_polygons(data)
+    cycleways = [data.coords(w.node_ids) for w in data.ways if w.tags.get("highway") == "cycleway"]
+    calming = tagged_points(data, lambda t: "traffic_calming" in t)
+    crossings = tagged_points(data, lambda t: t.get("highway") == "crossing")
+
+    tiles: dict[tuple[int, int], list[dict]] = {}
+    for way in data.ways:
+        record = _way_record(way, data.nodes)
+        if record is None:
+            continue
+        coords = record["coords"]
+
+        inres = in_residential(coords, polygons)
+        calming_pk = density_per_km(coords, calming)
+        crossing_pk = density_per_km(coords, crossings)
+        tag_l, tag_r = cycleway_tag_sides(way.tags)
+        geo_l, geo_r = cycleway_geometry_sides(coords, cycleways)
+        score = residential_score(
+            road_class=record["roadClass"], maxspeed=record["maxspeed"],
+            living_street=way.tags.get("highway") == "living_street",
+            calming_per_km=calming_pk, crossing_per_km=crossing_pk, in_residential=inres,
+        )
+        record.update({
+            "inResidential": inres,
+            "calmingPerKm": round(calming_pk, 3),
+            "crossingPerKm": round(crossing_pk, 3),
+            "cyclewayLeft": combine_side(tag_l, geo_l),
+            "cyclewayRight": combine_side(tag_r, geo_r),
+            "cyclestreet": cyclestreet(way.tags),
+            "residentialScore": score,
+            "comfortSpeed": comfort_speed(score, record["maxspeed"]),
+        })
+        tiles.setdefault(tile_of(*centroid(coords)), []).append(record)
     return tiles
 
 
