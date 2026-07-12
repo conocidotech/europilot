@@ -187,13 +187,70 @@ SMOKE_RC=$?
 cleanup; trap - EXIT
 
 # ---------------------------------------------------------------------------
+# Phase 4b — control + UI integration health (the new, riskiest code)
+# ---------------------------------------------------------------------------
+log "Phase 4b: control + UI integration — does the new upstream code load & init?"
+# Phase 4 only ran the europilot daemons. The riskier changes live in plannerd,
+# the longitudinal planner, the Params registry and the UI overlay. A fault there
+# fails a SAFETY-CRITICAL process (plannerd) -> processNotRunning -> disengage, so
+# validate they load and construct here, offroad, rather than while driving.
+python3 - <<'PY'
+import importlib, sys
+fail = []
+
+# 1) the opt-in easing param is registered (params_keys.h rebuilt) and OFF.
+try:
+    from openpilot.common.params import Params
+    if Params().get_bool("EuropilotCameraEasing"):
+        fail.append("EuropilotCameraEasing is ON -- must be OFF by default for a fresh deploy")
+    else:
+        print("   \033[1;32m✓\033[0m Params 'EuropilotCameraEasing' registered and OFF")
+except Exception as e:
+    fail.append(f"Params key not registered (did params rebuild?): {e!r}")
+
+# 2) euSpeedLimit resolves as a service (plannerd now subscribes to it).
+try:
+    from cereal import messaging
+    messaging.SubMaster(["euSpeedLimit"])
+    print("   \033[1;32m✓\033[0m euSpeedLimit service resolves (plannerd subscribe)")
+except Exception as e:
+    fail.append(f"euSpeedLimit service missing: {e!r}")
+
+# 3) the longitudinal planner constructs -- exercises the Params read + init on
+#    the safety-critical control process (a crash here would fail plannerd).
+try:
+    from cereal import car
+    from openpilot.selfdrive.controls.lib.longitudinal_planner import LongitudinalPlanner
+    LongitudinalPlanner(car.CarParams.new_message())
+    print("   \033[1;32m✓\033[0m LongitudinalPlanner constructs with the easing code path")
+except Exception as e:
+    fail.append(f"LongitudinalPlanner init failed: {e!r}")
+
+# 4) the onroad HUD overlay module imports (the augmented_road_view hook).
+try:
+    importlib.import_module("openpilot.selfdrive.ui.onroad.europilot_hud")
+    print("   \033[1;32m✓\033[0m onroad HUD module imports")
+except Exception as e:
+    fail.append(f"europilot_hud import failed: {e!r}")
+
+if fail:
+    print("\n   \033[1;31mControl/UI integration problems:\033[0m")
+    for f in fail:
+        print("     -", f)
+    sys.exit(4)
+print("\n   control + UI integration OK; easing is OFF by default")
+PY
+CONTROL_RC=$?
+
+# ---------------------------------------------------------------------------
 # Phase 5 — summary
 # ---------------------------------------------------------------------------
 log "Summary"
-if [ "$SMOKE_RC" -eq 0 ]; then
-  ok "BUILD + START + PUBLISH all green for ${BRANCH} @ ${NEW_SHA:0:10}"
+if [ "$SMOKE_RC" -eq 0 ] && [ "$CONTROL_RC" -eq 0 ]; then
+  ok "BUILD + PUBLISH + control/UI integration all green for ${BRANCH} @ ${NEW_SHA:0:10}"
 else
-  warn "one or more daemons did not publish — check /tmp/europilot_*.log"
+  [ "$SMOKE_RC" -ne 0 ] && warn "one or more daemons did not publish — check /tmp/europilot_*.log"
+  [ "$CONTROL_RC" -ne 0 ] && warn "control/UI integration check FAILED — see Phase 4b above (do NOT go onroad)"
 fi
 cat <<EOF
 
@@ -203,6 +260,9 @@ cat <<EOF
        Phase-4 SubMaster loop while onroad)
      - deploy the OSM gateway + set EUROPILOT_OSM_SIGNING_KEY, then confirm euMapAdvisory
        goes valid with real tiles
+     - keep the camera easing OFF for the first onroad drives; enable it only after
+       the advisories look sane, on a quiet road, supervised:
+         python3 -c "from openpilot.common.params import Params; Params().put_bool('EuropilotCameraEasing', True)"  # then reboot
      - supervised on-road, hand ready to take over
 
    Security: FORK_REMOTE (with its token) is now stored in $OP_DIR/.git/config.
@@ -215,4 +275,8 @@ cat <<EOF
      sudo reboot
 
 EOF
-exit "$SMOKE_RC"
+if [ "$SMOKE_RC" -eq 0 ] && [ "$CONTROL_RC" -eq 0 ]; then
+  exit 0
+else
+  exit 1
+fi
