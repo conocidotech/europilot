@@ -74,6 +74,8 @@ def sign_manifest(manifest: dict, signing_key_b64: str) -> dict:
 
 def verify_manifest(manifest: dict, verify_key_b64: str) -> bool:
     """Device side: is this manifest authentically from the pinned key?"""
+    if not isinstance(manifest, dict):
+        return False   # a non-object JSON body is not a manifest, not an error
     sig_b64 = manifest.get("signature")
     if not sig_b64:
         return False

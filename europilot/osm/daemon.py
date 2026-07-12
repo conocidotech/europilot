@@ -17,6 +17,18 @@ RATE_HZ = 4.0
 SERVICE = "euMapAdvisory"
 
 _PRESENCE = ("unknown", "absent", "present")
+_SPEED_MAX_KMH = 255
+
+
+def _clamp_kmh(v) -> int:
+    """A km/h value for the wire, or the -1 'unknown' sentinel.
+
+    Bounds anything out of a plausible range to the sentinel so a stray value
+    can neither crash the daemon at capnp assignment nor assert a bogus limit.
+    """
+    if isinstance(v, int) and not isinstance(v, bool) and 0 < v <= _SPEED_MAX_KMH:
+        return v
+    return -1
 
 
 def advisory_to_fields(a: Advisory) -> dict:
@@ -29,8 +41,8 @@ def advisory_to_fields(a: Advisory) -> dict:
         "valid": a.valid,
         "roadClass": a.road_class or "",
         "name": a.name or "",
-        "speedLimit": a.speed_limit if a.speed_limit is not None else -1,
-        "comfortSpeed": a.comfort_speed if a.comfort_speed is not None else -1,
+        "speedLimit": _clamp_kmh(a.speed_limit),
+        "comfortSpeed": _clamp_kmh(a.comfort_speed),
         "inResidential": a.in_residential,
         "cyclewayLeft": a.cycleway_left if a.cycleway_left in _PRESENCE else "unknown",
         "cyclewayRight": a.cycleway_right if a.cycleway_right in _PRESENCE else "unknown",
@@ -44,27 +56,40 @@ def main():
 
     from cereal import messaging
     from openpilot.common.realtime import Ratekeeper
+    from openpilot.common.swaglog import cloudlog
 
     client = OsmTileClient()
     pm = messaging.PubMaster([SERVICE])
     sm = messaging.SubMaster(["gpsLocation"])
     rk = Ratekeeper(RATE_HZ, print_delay_threshold=None)
 
+    # Advisory-only: a crash here would soft-disable openpilot, so guard the
+    # whole body and degrade to a fail-closed heartbeat instead.
     while True:
-        sm.update(0)
+        try:
+            sm.update(0)
 
-        advisory = Advisory.none()
-        if sm.valid["gpsLocation"] and sm.recv_frame["gpsLocation"] > 0:
-            gps = sm["gpsLocation"]
-            client.poll(gps.latitude, gps.longitude)   # cold path, non-blocking
-            advisory = client.match(gps.latitude, gps.longitude, gps.bearingDeg)
+            advisory = Advisory.none()
+            if sm.valid["gpsLocation"] and sm.recv_frame["gpsLocation"] > 0:
+                gps = sm["gpsLocation"]
+                client.poll(gps.latitude, gps.longitude)   # cold path, non-blocking
+                advisory = client.match(gps.latitude, gps.longitude, gps.bearingDeg)
 
-        m = messaging.new_message(SERVICE)
-        dat = m.euMapAdvisory
-        dat.fetchMonoTime = int(time.monotonic() * 1e9)
-        for field, value in advisory_to_fields(advisory).items():
-            setattr(dat, field, value)
-        pm.send(SERVICE, m)
+            m = messaging.new_message(SERVICE)
+            dat = m.euMapAdvisory
+            dat.fetchMonoTime = int(time.monotonic() * 1e9)
+            for field, value in advisory_to_fields(advisory).items():
+                setattr(dat, field, value)
+            pm.send(SERVICE, m)
+        except Exception:
+            cloudlog.exception("europilot_osmd iteration failed; publishing fail-closed")
+            try:
+                m = messaging.new_message(SERVICE)
+                for field, value in advisory_to_fields(Advisory.none()).items():
+                    setattr(m.euMapAdvisory, field, value)
+                pm.send(SERVICE, m)
+            except Exception:
+                cloudlog.exception("europilot_osmd could not publish fail-closed heartbeat")
 
         rk.keep_time()
 

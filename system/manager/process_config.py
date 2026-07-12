@@ -67,12 +67,14 @@ def and_(*fns):
 procs = [
   DaemonProcess("manage_athenad", "system.athena.manage_athenad", "AthenadPid"),
 
-  # Europilot: device-side data gateway (NDW/OSM/traffic-light/speed context)
-  PythonProcess("europilotd", "europilot.gateway", only_onroad),
+  # Europilot: device-side data gateway (NDW/OSM/traffic-light/speed context).
+  # restart_if_crash so an advisory-daemon fault never becomes a lingering
+  # processNotRunning that soft-disables openpilot; the loops also fail closed.
+  PythonProcess("europilotd", "europilot.gateway", only_onroad, restart_if_crash=True),
   # Europilot: one fused advisory speed limit (NDW + RSA camera + OSM)
-  PythonProcess("europilot_speedlimitd", "europilot.speed_limit", only_onroad),
+  PythonProcess("europilot_speedlimitd", "europilot.speed_limit", only_onroad, restart_if_crash=True),
   # Europilot: matched OSM road advisory from the synced signed tiles
-  PythonProcess("europilot_osmd", "europilot.osm.daemon", only_onroad),
+  PythonProcess("europilot_osmd", "europilot.osm.daemon", only_onroad, restart_if_crash=True),
 
   NativeProcess("loggerd", "system/loggerd", ["./loggerd"], logging),
   NativeProcess("encoderd", "system/loggerd", ["./encoderd"], only_onroad),

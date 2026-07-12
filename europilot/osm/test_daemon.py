@@ -34,6 +34,12 @@ class TestAdvisoryToFields:
         f = advisory_to_fields(adv)
         assert f["speedLimit"] == -1 and f["comfortSpeed"] == -1
 
+    def test_out_of_range_speed_is_clamped_to_sentinel(self):
+        # A corrupt tile value must not reach the Int16 wire field unbounded.
+        adv = Advisory(valid=True, speed_limit=40000, comfort_speed=-5, distance_m=1.0)
+        f = advisory_to_fields(adv)
+        assert f["speedLimit"] == -1 and f["comfortSpeed"] == -1
+
 
 class TestSchemaMapping:
     """The mapped fields must actually exist on the MapAdvisory struct."""
