@@ -18,7 +18,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
 from europilot.ndw.types import Display
-from gateway.ndw import feed, region
+from gateway.ndw import feed, region, sign
 from gateway.ndw.static_index import load_signs
 
 REFRESH_INTERVAL_S = 60.0
@@ -57,7 +57,7 @@ class FeedStore:
             time.sleep(interval)
 
 
-def make_handler(signs, store: FeedStore):
+def make_handler(signs, store: FeedStore, signing_key: str):
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
 
@@ -99,18 +99,21 @@ def make_handler(signs, store: FeedStore):
                 return self._send(503, {"error": "no feed snapshot yet"})
 
             age = time.monotonic() - updated_at
-            self._send(200, region.build(signs, states, tile_lat, tile_lon, age))
+            snapshot = region.build(signs, states, tile_lat, tile_lon, age)
+            self._send(200, sign.sign_snapshot(snapshot, signing_key))
 
     return Handler
 
 
-def serve(shapefile: str, host: str = "127.0.0.1", port: int = 8080) -> None:
+def serve(shapefile: str, host: str = "127.0.0.1", port: int = 8080,
+          signing_key: str | None = None) -> None:
+    signing_key = signing_key or sign.signing_key_from_env()
     signs = load_signs(shapefile)
     store = FeedStore()
     store.refresh()
     threading.Thread(target=store.run_forever, daemon=True).start()
 
-    server = ThreadingHTTPServer((host, port), make_handler(signs, store))
+    server = ThreadingHTTPServer((host, port), make_handler(signs, store, signing_key))
     print(f"europilot ndw gateway on http://{host}:{port} ({len(signs)} signs)")
     server.serve_forever()
 

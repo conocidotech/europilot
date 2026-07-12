@@ -22,6 +22,14 @@ import urllib.request
 
 from europilot.ndw.match import SEARCH_RADIUS_M, GantryIndex
 from europilot.ndw.types import Display, Match, Sign
+from gateway.ndw.sign import verify_snapshot
+
+# The gateway's snapshot-signing public key (Ed25519). The gateway signs every
+# feed with one identity, so this is the same pinned key the tile client uses;
+# the device verifies each snapshot against it and trusts no unsigned feed.
+# Rotating it strands any device still pinned to the old key -- change it only in
+# a deliberate key rotation, in step with the gateway.
+SNAPSHOT_PUBKEY_B64 = "ArIHIJnQDJwuxgBTv1gLpLpYn53RQNPWvF6pBvQ09Gw="
 
 # Same tile size as the OSM decision doc (mapd's AREA_BOX_DEGREES).
 TILE_DEG = 0.25
@@ -70,8 +78,9 @@ class _Snapshot:
 class MatrixSignClient:
     """Keeps one region snapshot in memory and matches poses against it."""
 
-    def __init__(self, host: str | None = None):
+    def __init__(self, host: str | None = None, pubkey_b64: str = SNAPSHOT_PUBKEY_B64):
         self._host = host or gateway_host()
+        self._pubkey = pubkey_b64
         self._lock = threading.Lock()
         self._snapshot: _Snapshot | None = None
         self._refreshing = False
@@ -85,6 +94,9 @@ class MatrixSignClient:
                 payload = json.loads(resp.read())
         except Exception:
             return None
+
+        if not verify_snapshot(payload, self._pubkey):
+            return None   # unsigned or tampered -- do not trust; fall back
 
         try:
             signs = [Sign.from_json(s) for s in payload["signs"]]
