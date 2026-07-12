@@ -1,0 +1,15 @@
+[Unit]
+Description=Europilot NDW MSI shapefile refresh (fetch + validate + swap + restart)
+Documentation=https://app.europilot.eu
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# Runs as root: it chowns the new file to the service user and restarts the
+# gateway. The download is validated before it replaces the live shapefile.
+EnvironmentFile=/etc/europilot/gateway.env
+ExecStart=/opt/europilot-gateway/deploy/gateway/refresh_ndw_shapefile.sh
+
+[Install]
+WantedBy=multi-user.target

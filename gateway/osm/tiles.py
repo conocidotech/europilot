@@ -24,6 +24,7 @@ from gateway.osm.spatial import (
     cycleway_tag_sides, density_per_km, in_residential, residential_polygons,
     residential_score, tagged_points,
 )
+from gateway.osm.spatial_index import PointIndex, PolygonIndex, PolylineIndex
 
 
 def _way_record(way: Way, nodes: dict[int, tuple[float, float]]) -> dict | None:
@@ -57,6 +58,15 @@ def build_tiles_full(data: OsmData) -> dict[tuple[int, int], list[dict]]:
     crossings = tagged_points(data, lambda t: t.get("highway") == "crossing")
     cameras = cameras_by_way(data)
 
+    # Grid-index the features so each road tests only its neighbourhood, not the
+    # whole country (see spatial_index.py). The candidate subsets are supersets of
+    # every feature within each join's search radius, so the joins -- and the tile
+    # hashes -- come out byte-identical to a full scan, just far faster.
+    poly_idx = PolygonIndex(polygons)
+    cycle_idx = PolylineIndex(cycleways)
+    calming_idx = PointIndex(calming)
+    crossing_idx = PointIndex(crossings)
+
     tiles: dict[tuple[int, int], list[dict]] = {}
     for way in data.ways:
         record = _way_record(way, data.nodes)
@@ -64,11 +74,11 @@ def build_tiles_full(data: OsmData) -> dict[tuple[int, int], list[dict]]:
             continue
         coords = record["coords"]
 
-        inres = in_residential(coords, polygons)
-        calming_pk = density_per_km(coords, calming)
-        crossing_pk = density_per_km(coords, crossings)
+        inres = in_residential(coords, poly_idx.near(coords))
+        calming_pk = density_per_km(coords, calming_idx.near(coords))
+        crossing_pk = density_per_km(coords, crossing_idx.near(coords))
         tag_l, tag_r = cycleway_tag_sides(way.tags)
-        geo_l, geo_r = cycleway_geometry_sides(coords, cycleways)
+        geo_l, geo_r = cycleway_geometry_sides(coords, cycle_idx.near(coords))
         score = residential_score(
             road_class=record["roadClass"], maxspeed=record["maxspeed"],
             living_street=way.tags.get("highway") == "living_street",

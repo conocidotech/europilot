@@ -117,12 +117,34 @@ def tagged_points(data: OsmData, predicate) -> list[tuple[float, float]]:
             if nid in data.nodes and predicate(tags)]
 
 
+def _bbox_pads(coords: list, reach_m: float) -> tuple[float, float, float, float, float, float]:
+    """(min_lat, min_lon, max_lat, max_lon, pad_lat, pad_lon) for a reach in metres.
+
+    A point outside this padded box is provably >reach_m from any point of coords,
+    so it can be rejected before the exact (and costly) polyline distance -- the
+    pads use the smallest cos(lat) in range, so a truly-near point is never cut.
+    """
+    lats = [p[0] for p in coords]
+    lons = [p[1] for p in coords]
+    mnla, mxla, mnlo, mxlo = min(lats), max(lats), min(lons), max(lons)
+    pad_lat = reach_m / 111_320.0
+    pad_lon = reach_m / (111_320.0 * math.cos(math.radians(max(abs(mnla), abs(mxla)))))
+    return mnla, mnlo, mxla, mxlo, pad_lat, pad_lon
+
+
 def density_per_km(way_coords: list, points: list, buffer_m: float = 15.0) -> float:
     """Count points within buffer_m of the way, per km of way length."""
     length_km = way_length_m(way_coords) / 1000.0
-    if length_km <= 0:
+    if length_km <= 0 or not way_coords:
         return 0.0
-    near = sum(1 for p in points if point_to_polyline_m(p, way_coords) <= buffer_m)
+    mnla, mnlo, mxla, mxlo, pad_lat, pad_lon = _bbox_pads(way_coords, buffer_m)
+    near = 0
+    for p in points:
+        if p[0] < mnla - pad_lat or p[0] > mxla + pad_lat or \
+           p[1] < mnlo - pad_lon or p[1] > mxlo + pad_lon:
+            continue
+        if point_to_polyline_m(p, way_coords) <= buffer_m:
+            near += 1
     return near / length_km
 
 
@@ -170,10 +192,16 @@ def cycleway_geometry_sides(road: list, cycleways: list[list], max_m: float = 20
     if len(road) < 2:
         return left, right
     road_brg = bearing(road[0], road[-1])
+    mnla, mnlo, mxla, mxlo, pad_lat, pad_lon = _bbox_pads(road, max_m)
     for cw in cycleways:
         if len(cw) < 2:
             continue
-        near = [p for p in cw if point_to_polyline_m(p, road) <= max_m]
+        # Reject cycleway points outside the road's bbox+max_m before the exact
+        # polyline distance -- a point beyond the box is provably >max_m away.
+        near = [p for p in cw
+                if mnla - pad_lat <= p[0] <= mxla + pad_lat
+                and mnlo - pad_lon <= p[1] <= mxlo + pad_lon
+                and point_to_polyline_m(p, road) <= max_m]
         if len(near) / len(cw) < min_frac:
             continue
         if not _parallel(road_brg, bearing(cw[0], cw[-1]), bearing_tol):

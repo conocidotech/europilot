@@ -1,0 +1,29 @@
+[Unit]
+Description=Europilot OSM tile rebuild (fetch PBF + derive + serialize)
+Documentation=https://app.europilot.eu
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=europilot
+Group=europilot
+WorkingDirectory=/opt/europilot
+EnvironmentFile=/etc/europilot/gateway.env
+# Refresh the Netherlands extract, then rebuild the tile dir atomically. curl's
+# -z makes the download conditional (only if the mirror has a newer file), so an
+# unchanged extract keeps its mtime and the tile hashes stay stable.
+ExecStart=/usr/bin/curl -fSL -z ${EUROPILOT_OSM_PBF} -o ${EUROPILOT_OSM_PBF} ${EUROPILOT_OSM_PBF_URL}
+ExecStart=/opt/europilot/.venv-gateway/bin/python deploy/gateway/osm_pipeline.py build \
+    --pbf ${EUROPILOT_OSM_PBF} --out ${EUROPILOT_OSM_TILE_DIR}
+# Hand the fresh tiles to the running server with no downtime (ignored if stopped).
+ExecStartPost=-/bin/systemctl reload europilot-osm.service
+TimeoutStartSec=3600
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/europilot
+
+[Install]
+WantedBy=multi-user.target

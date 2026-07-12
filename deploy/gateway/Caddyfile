@@ -1,0 +1,41 @@
+# Europilot gateway reverse proxy -- /etc/caddy/Caddyfile
+#
+# Caddy terminates TLS for app.europilot.eu (automatic Let's Encrypt) and is the
+# ONLY thing the device ever connects to. It fans the device's paths out to the
+# two local services; nothing else is exposed. The device calls exactly:
+#   /ndw/region   /osm/manifest   /osm/tile   /flags   (+ /health for probes)
+#
+# Point app.europilot.eu's DNS A/AAAA record at this host before starting Caddy,
+# or the ACME challenge fails.
+
+app.europilot.eu {
+	encode zstd gzip
+
+	# NDW matrix-sign region snapshots (gateway/ndw/service.py :8080)
+	handle /ndw/* {
+		reverse_proxy 127.0.0.1:8080
+	}
+
+	# Signed OSM tiles + manifests (deploy/gateway/osm_pipeline.py serve :8081)
+	handle /osm/* {
+		reverse_proxy 127.0.0.1:8081
+	}
+
+	# Signed feature flags. Static signed JSON is simplest: drop a signed file at
+	# /var/lib/europilot/flags/flags and serve it. Until one exists a 404 is safe
+	# -- the device fails closed (all flags off). Enable when you publish flags.
+	handle /flags {
+		root * /var/lib/europilot/flags
+		rewrite * /flags
+		file_server
+	}
+
+	# Liveness probe -> NDW service reports feed freshness.
+	handle /health {
+		reverse_proxy 127.0.0.1:8080
+	}
+
+	handle {
+		respond "europilot gateway" 404
+	}
+}

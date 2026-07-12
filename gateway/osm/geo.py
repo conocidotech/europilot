@@ -52,11 +52,35 @@ def point_to_segment_m(p: tuple[float, float], a: tuple[float, float],
 
 
 def point_to_polyline_m(p: tuple[float, float], line: list[tuple[float, float]]) -> float:
-    """Shortest distance from p to a polyline (metres). inf for an empty line."""
-    if len(line) == 1:
+    """Shortest distance from p to a polyline (metres). inf for an empty line.
+
+    Hot path: projects the whole line into a local metre frame centred on p once
+    (p at the origin), reusing a single cos(lat), instead of reprojecting each
+    segment's endpoints -- byte-identical to point_to_segment_m per segment, but
+    without the redundant trig that dominated the profile.
+    """
+    n = len(line)
+    if n == 1:
         return meters_between(p, line[0])
-    return min((point_to_segment_m(p, line[i], line[i + 1]) for i in range(len(line) - 1)),
-               default=float("inf"))
+    if n == 0:
+        return float("inf")
+    coslat = math.cos(math.radians(p[0]))
+    xs = [(q[1] - p[1]) * _M_PER_DEG * coslat for q in line]
+    ys = [(q[0] - p[0]) * _M_PER_DEG for q in line]
+    best = float("inf")
+    for i in range(n - 1):
+        ax, ay, bx, by = xs[i], ys[i], xs[i + 1], ys[i + 1]
+        dx, dy = bx - ax, by - ay
+        seg2 = dx * dx + dy * dy
+        if seg2 == 0.0:
+            t = 0.0
+        else:
+            t = max(0.0, min(1.0, (-ax * dx - ay * dy) / seg2))
+        cx, cy = ax + t * dx, ay + t * dy
+        d = math.hypot(cx, cy)
+        if d < best:
+            best = d
+    return best
 
 
 def side_of_segment(a: tuple[float, float], b: tuple[float, float],

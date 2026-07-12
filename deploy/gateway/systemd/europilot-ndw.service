@@ -1,0 +1,28 @@
+[Unit]
+Description=Europilot NDW matrix-sign gateway
+Documentation=https://app.europilot.eu
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=europilot
+Group=europilot
+WorkingDirectory=/opt/europilot-gateway
+EnvironmentFile=/etc/europilot/gateway.env
+# Serves signed /ndw/region + /health on loopback; nginx fronts it with TLS.
+# The live MSI feed is polled internally every 60s; the static shapefile is
+# loaded once at start, so a shapefile refresh is a restart (see the timer).
+ExecStart=/opt/europilot-gateway/.venv-gateway/bin/python -m gateway.ndw.service \
+    --shapefile ${EUROPILOT_NDW_SHAPEFILE} --host 127.0.0.1 --port 8080
+Restart=on-failure
+RestartSec=5
+# Hardening: no privileges, read-only system, data dir the only writable path.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/europilot
+
+[Install]
+WantedBy=multi-user.target
