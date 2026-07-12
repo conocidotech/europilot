@@ -28,6 +28,7 @@ sync traffic -- stay stable between rebuilds of identical data.
 import argparse
 import json
 import signal
+import subprocess
 import sys
 import threading
 from pathlib import Path
@@ -42,6 +43,26 @@ from gateway.osm import delivery, ingest, wire
 TILES_SUBDIR = "tiles"
 META_NAME = "meta.json"
 
+# A national extract is too big to DOM-parse in one pass (expat's 2 GB limit,
+# and the box's RAM), so derivation runs per 0.25 deg cell -- the tile size --
+# and the cells are unioned. osmium extracts each cell with a margin so a way's
+# spatial-join neighbours are present; each cell keeps only the one tile it owns
+# (a way is assigned to its centroid's tile), which dedups boundary-crossing ways
+# for free. Default bounds cover the Netherlands.
+TILE_DEG = 0.25
+CELL_MARGIN_DEG = 0.1
+COARSE_DEG = 1.0            # stage-1 region size, cut once from the national file
+COARSE_MARGIN_DEG = 0.15   # > CELL_MARGIN, so cells at a region edge keep context
+NL_BBOX = (3.2, 50.6, 7.3, 53.7)   # (west, south, east, north)
+
+
+def _osmconvert(src: Path, w: float, s: float, e: float, n: float, out: Path, cwd: Path) -> None:
+    """Cut a bbox (complete ways) with osmconvert -- streaming, low-memory."""
+    subprocess.run(["osmconvert", str(src), f"-b={w},{s},{e},{n}",
+                    "--complete-ways", f"-o={out}"],
+                   check=True, cwd=str(cwd),
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
 
 def _tile_path(tiles_dir: Path, lat: int, lon: int) -> Path:
     return tiles_dir / f"{lat}_{lon}.bin"
@@ -52,15 +73,76 @@ def _parse_tile_name(name: str) -> tuple[int, int]:
     return int(lat_s), int(lon_s)
 
 
-def build(pbf: Path, out: Path, work_dir: Path) -> int:
+def _derive_by_cell(source_pbf: Path, work_dir: Path, bbox: tuple[float, float, float, float]) -> dict:
+    """Filter the source PBF, then derive 0.25 deg tiles via a two-stage cut.
+
+    A single pass over a national extract blows expat's 2 GB DOM limit, and
+    osmium's extractor needs >1 GB and OOMs a small box. Cutting every 0.25 deg
+    cell straight from the national file works but re-reads it 200+ times. So:
+    stage 1 cuts the country into 1 deg regions once; stage 2 cuts each small
+    region's cells (a cheap read) and derives them. All cuts use osmconvert
+    (streaming, low-memory) and are margined so a way's spatial-join neighbours
+    are present; each cell keeps only the tile it owns, so a boundary-crossing way
+    is derived exactly once, by whichever cell holds its centroid.
+    """
+    # Only the highway classes the derivation actually serves (plus cycleway as
+    # spatial-join geometry) -- dropping footway/path/track etc. is output-neutral
+    # (_way_record discards them anyway) but shrinks dense-city cells a lot.
+    highways = ("motorway,motorway_link,trunk,trunk_link,primary,primary_link,"
+                + "secondary,secondary_link,tertiary,tertiary_link,unclassified,"
+                + "residential,living_street,service,cycleway")
+    tight_filter = (
+        f"w/highway={highways}",
+        "n/highway=crossing,traffic_signals", "n/highway=speed_camera",
+        "n/traffic_calming", "nw/landuse=residential", "r/landuse=residential",
+        "r/type=enforcement",
+    )
+    filtered = work_dir / "filtered.osm.pbf"
+    if not (filtered.exists() and filtered.stat().st_mtime >= source_pbf.stat().st_mtime):
+        ingest._run(ingest.tags_filter_cmd(source_pbf, filtered, tight_filter))
+
+    coarse_dir = work_dir / "coarse"
+    cells_dir = work_dir / "cells"
+    coarse_dir.mkdir(parents=True, exist_ok=True)
+    cells_dir.mkdir(parents=True, exist_ok=True)
+
+    west, south, east, north = bbox
+    step = int(round(COARSE_DEG / TILE_DEG))
+    coarse = [(clat, clon)
+              for clat in range(int(south // COARSE_DEG), int(north // COARSE_DEG) + 1)
+              for clon in range(int(west // COARSE_DEG), int(east // COARSE_DEG) + 1)]
+
+    tiles: dict[tuple[int, int], list[dict]] = {}
+    for idx, (clat, clon) in enumerate(coarse):
+        region = coarse_dir / f"r_{clat}_{clon}.osm.pbf"
+        _osmconvert(filtered,
+                    clon * COARSE_DEG - COARSE_MARGIN_DEG, clat * COARSE_DEG - COARSE_MARGIN_DEG,
+                    (clon + 1) * COARSE_DEG + COARSE_MARGIN_DEG, (clat + 1) * COARSE_DEG + COARSE_MARGIN_DEG,
+                    region, work_dir)
+        for tl in range(clat * step, clat * step + step):
+            for to in range(clon * step, clon * step + step):
+                cell_osm = cells_dir / f"{tl}_{to}.osm"
+                _osmconvert(region,
+                            to * TILE_DEG - CELL_MARGIN_DEG, tl * TILE_DEG - CELL_MARGIN_DEG,
+                            (to + 1) * TILE_DEG + CELL_MARGIN_DEG, (tl + 1) * TILE_DEG + CELL_MARGIN_DEG,
+                            cell_osm, work_dir)
+                records = ingest.build_tiles_from_osm(cell_osm).get((tl, to))
+                cell_osm.unlink(missing_ok=True)
+                if records:
+                    tiles[(tl, to)] = records
+        region.unlink(missing_ok=True)
+        print(f"  region {idx + 1}/{len(coarse)} done, {len(tiles)} non-empty tiles")
+    return tiles
+
+
+def build(pbf: Path, out: Path, work_dir: Path,
+          bbox: tuple[float, float, float, float] = NL_BBOX) -> int:
     """Filter+derive a PBF into a signed-serving-ready tile directory (atomic)."""
     ingest.require_osmium()
     work_dir.mkdir(parents=True, exist_ok=True)
 
     generated_at = int(pbf.stat().st_mtime)
-    paths = ingest.IngestPaths(source_pbf=pbf, work_dir=work_dir)
-    export_osm = ingest.refresh_extract(paths)
-    tiles = ingest.build_tiles_from_osm(export_osm)
+    tiles = _derive_by_cell(pbf, work_dir, bbox)
 
     staging = out.with_name(out.name + ".tmp")
     if staging.exists():
