@@ -13,6 +13,7 @@ from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import Longi
 from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import T_IDXS as T_IDXS_MPC
 from openpilot.selfdrive.controls.lib.drive_helpers import CONTROL_N, get_accel_from_plan
 from openpilot.selfdrive.car.cruise import V_CRUISE_MAX, V_CRUISE_UNSET
+from openpilot.common.params import Params
 from openpilot.common.swaglog import cloudlog
 
 A_CRUISE_MAX_VALS = [1.6, 1.2, 0.8, 0.6]
@@ -62,6 +63,9 @@ class LongitudinalPlanner:
     self.v_desired_trajectory = np.zeros(CONTROL_N)
     self.a_desired_trajectory = np.zeros(CONTROL_N)
     self.j_desired_trajectory = np.zeros(CONTROL_N)
+
+    # Europilot: opt-in camera-approach cruise easing (off by default). Read once.
+    self._eu_camera_easing = Params().get_bool("EuropilotCameraEasing")
 
   @staticmethod
   def parse_model(model_msg):
@@ -127,6 +131,14 @@ class LongitudinalPlanner:
 
     if force_slow_decel:
       v_cruise = 0.0
+
+    # Europilot camera easing (opt-in): cap cruise toward the enforced limit when
+    # a speed camera is ahead. A min(), so it can only slow, never speed up; the
+    # MPC clips any cruise target to a comfort decel, so this is always a gentle
+    # taper, never a hard brake. Engaged-only, and the gas pedal releases it.
+    if self._eu_camera_easing and not reset_state and not sm['carState'].gasPressed:
+      if sm.valid['euSpeedLimit'] and sm['euSpeedLimit'].cruiseTarget > 0:
+        v_cruise = min(v_cruise, sm['euSpeedLimit'].cruiseTarget * CV.KPH_TO_MS)
 
     self.mpc.set_weights(prev_accel_constraint, personality=sm['selfdriveState'].personality)
     self.mpc.set_cur_state(self.v_desired_filter.x, self.a_desired)

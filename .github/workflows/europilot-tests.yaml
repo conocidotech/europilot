@@ -1,0 +1,71 @@
+name: europilot tests
+
+# Only the europilot/ overlay and the gateway/ server code. Upstream openpilot
+# CI (tests.yaml) needs the full comma toolchain and container; this runs on
+# plain Python in under a minute, so pull requests get feedback without
+# building anything.
+
+on:
+  push:
+    branches: [master]
+    paths: ['europilot/**', 'gateway/**', '.github/workflows/europilot-tests.yaml']
+  pull_request:
+    paths: ['europilot/**', 'gateway/**', '.github/workflows/europilot-tests.yaml']
+  workflow_dispatch:
+
+concurrency:
+  group: europilot-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      AVANANCE_PROJECT_URL: ${{ secrets.AVANANCE_PROJECT_URL }}
+      # Avanance stories covered by this job. A green run flips tests_updated,
+      # the gate to "done". Add the gateway-pipeline story IDs here once they
+      # exist in Avanance (schema + device-side gateway client).
+      EUROPILOT_STORY_IDS: 'EUROPILOT-36'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install test tooling
+        # europilot imports flags.py/gateway.py (pynacl); pycapnp (a root
+        # dependency, prebuilt wheel) exercises the OSM tile wire format.
+        run: pip install pytest ruff pynacl pycapnp
+
+      - name: Lint
+        # Both overlays lint clean; keep it that way.
+        run: ruff check europilot/ gateway/
+
+      - name: Test
+        # --noconftest: the repo-root conftest.py imports compiled openpilot
+        #   modules that are not built in this lightweight job.
+        # -o addopts: drop the repo-wide addopts (xdist, the openpilot ignore
+        #   list, pytest-cpp), none of which are installed here.
+        # `europilot` covers ndw + osm; `gateway` covers ndw + osm.
+        run: pytest europilot gateway --noconftest -o addopts="-q --durations=5"
+
+      - name: Report result to Avanance
+        # No-op unless both the secret and the story IDs are set, so PRs from
+        # forks still pass.
+        if: always()
+        run: |
+          if [ -z "$AVANANCE_PROJECT_URL" ] || [ -z "$EUROPILOT_STORY_IDS" ]; then
+            echo "AVANANCE_PROJECT_URL or EUROPILOT_STORY_IDS not set, skipping."
+            exit 0
+          fi
+          status=$([ "${{ job.status }}" = "success" ] && echo passed || echo failed)
+          stories=$(echo "$EUROPILOT_STORY_IDS" | python3 -c "import sys,json; print(json.dumps([s.strip() for s in sys.stdin.read().split(',') if s.strip()]))")
+          curl -sS --fail-with-body -X POST "$AVANANCE_PROJECT_URL/test-results" \
+            -H 'Content-Type: application/json' \
+            -H 'Accept: application/json' \
+            -d "{\"stories\":$stories,\"name\":\"europilot overlay unit tests\",\"status\":\"$status\"}"
