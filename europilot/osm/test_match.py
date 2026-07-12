@@ -1,7 +1,7 @@
 """Tests for the pure pose->road matcher."""
 
 from europilot.osm.match import match
-from europilot.osm.types import Road
+from europilot.osm.types import Camera, Road
 
 
 def _road(rid, points, **kw):
@@ -52,3 +52,37 @@ class TestMatch:
 
     def test_empty_roads(self):
         assert match((52.0, 5.0), 90.0, []).valid is False
+
+
+# EW road with a fixed camera at lon 5.015 (100 km/h).
+_CAM = Camera(lat=52.010, lon=5.015, maxspeed=100, kind="fixed")
+EW_CAM = _road(3, [(52.010, 5.000), (52.010, 5.020)], cameras=(_CAM,))
+
+
+class TestCameraAhead:
+    def test_camera_ahead_in_travel_direction(self):
+        adv = match((52.010, 5.005), heading=90.0, roads=[EW_CAM])
+        assert adv.valid and adv.camera_kind == "fixed" and adv.camera_limit == 100
+        assert 600 < adv.camera_distance_m < 760   # ~685 m east along the road
+
+    def test_camera_behind_is_not_reported(self):
+        adv = match((52.010, 5.018), heading=90.0, roads=[EW_CAM])
+        assert adv.valid and adv.camera_distance_m is None and adv.camera_kind == ""
+
+    def test_reverse_direction_flips_what_is_ahead(self):
+        # Same pose, now driving west: the camera is ahead again.
+        adv = match((52.010, 5.018), heading=270.0, roads=[EW_CAM])
+        assert adv.camera_distance_m is not None
+
+    def test_no_heading_is_fail_safe(self):
+        # Without a heading we cannot tell ahead from behind -> report nothing.
+        adv = match((52.010, 5.005), heading=None, roads=[EW_CAM])
+        assert adv.valid and adv.camera_distance_m is None
+
+    def test_only_the_matched_road_cameras_count(self):
+        # The matched road (EW, no camera) is what we read; a camera on the other
+        # road never bleeds in -- the device half of the off-ramp guard.
+        ns_cam = _road(2, [(52.000, 5.010), (52.020, 5.010)],
+                       cameras=(Camera(52.015, 5.010, 100, "fixed"),))
+        adv = match((52.010, 5.005), heading=90.0, roads=[EW, ns_cam])
+        assert adv.road_id == 1 and adv.camera_distance_m is None

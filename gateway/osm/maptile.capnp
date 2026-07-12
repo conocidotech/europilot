@@ -39,6 +39,19 @@ struct Point {
   lon @1 :Int32;
 }
 
+enum CameraKind {
+  fixed @0;        # fixed speed camera (flitspaal)
+  section @1;      # average-speed section start (trajectcontrole)
+}
+
+# A speed-enforcement point attached to the road it enforces (server-side, so the
+# device never reacts to a camera that sits on the off-ramp). Advisory only.
+struct Camera {
+  point @0 :Point;        # location on this road (section: the section start)
+  maxspeed @1 :UInt8;     # enforced km/h; 0 == unknown (defer to the road limit)
+  kind @2 :CameraKind;
+}
+
 struct Road {
   id @0 :UInt64;
   roadClass @1 :RoadClass;
@@ -57,6 +70,9 @@ struct Road {
   cyclestreet @12 :Bool;
   residentialScore @13 :Float32;
   comfortSpeed @14 :UInt8;     # advisory km/h; 0 == none (defer to posted)
+
+  # speed cameras / trajectcontrole on THIS road (gateway/osm/cameras.py)
+  cameras @15 :List(Camera);
 }
 
 struct MapTile {

@@ -34,9 +34,11 @@ from gateway.osm.tiles import build_tiles_full
 TAG_FILTER: tuple[str, ...] = (
     "w/highway",
     "n/highway=crossing,traffic_signals",
+    "n/highway=speed_camera",
     "n/traffic_calming",
     "nw/landuse=residential",
     "r/landuse=residential",
+    "r/type=enforcement",
 )
 
 Runner = Callable[[Sequence[str]], None]

@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<osm version="0.6" generator="europilot-test">
+  <!-- Motorway mainline (way 200), W->E along lat 52.000 -->
+  <node id="1" lat="52.000" lon="5.000"/>
+  <node id="2" lat="52.000" lon="5.010"/>
+  <node id="3" lat="52.000" lon="5.020"/>
+  <node id="4" lat="52.000" lon="5.030"/>
+  <!-- Off-ramp (way 201), diverges north from the junction at node 3 -->
+  <node id="20" lat="52.005" lon="5.025"/>
+  <node id="21" lat="52.010" lon="5.030"/>
+  <!-- Fixed camera ON the mainline: ~11 m north of lat 52.000, at lon 5.010 -->
+  <node id="30" lat="52.0001" lon="5.010"><tag k="highway" v="speed_camera"/><tag k="maxspeed" v="100"/></node>
+  <!-- Fixed camera ON the ramp: ~11 m from ramp node 20, far from the mainline -->
+  <node id="31" lat="52.0051" lon="5.025"><tag k="highway" v="speed_camera"/></node>
+  <!-- A camera far from any road (~55 m north): must not attach -->
+  <node id="32" lat="52.0005" lon="5.005"><tag k="highway" v="speed_camera"/><tag k="maxspeed" v="80"/></node>
+  <!-- Section (trajectcontrole) endpoints on the mainline -->
+  <node id="40" lat="52.000" lon="5.002"/>
+  <node id="41" lat="52.000" lon="5.028"/>
+
+  <way id="200">
+    <nd ref="1"/><nd ref="2"/><nd ref="3"/><nd ref="4"/>
+    <tag k="highway" v="motorway"/>
+  </way>
+  <way id="201">
+    <nd ref="3"/><nd ref="20"/><nd ref="21"/>
+    <tag k="highway" v="motorway_link"/>
+  </way>
+
+  <!-- Average-speed enforcement (trajectcontrole) on the mainline, 100 km/h -->
+  <relation id="300">
+    <member type="way" ref="200" role=""/>
+    <member type="node" ref="40" role="from"/>
+    <member type="node" ref="41" role="to"/>
+    <tag k="type" v="enforcement"/>
+    <tag k="enforcement" v="average_speed"/>
+    <tag k="maxspeed" v="100"/>
+  </relation>
+</osm>

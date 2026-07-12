@@ -48,6 +48,9 @@ def advisory_to_fields(a: Advisory) -> dict:
         "cyclewayRight": a.cycleway_right if a.cycleway_right in _PRESENCE else "unknown",
         "cyclestreet": a.cyclestreet,
         "distance": a.distance_m if a.distance_m is not None else -1.0,
+        "cameraDistance": a.camera_distance_m if a.camera_distance_m is not None else -1.0,
+        "cameraLimit": _clamp_kmh(a.camera_limit),
+        "cameraKind": a.camera_kind or "",
     }
 
 

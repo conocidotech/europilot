@@ -5,7 +5,16 @@ None for unknown rather than the wire's 0/enum sentinels). Advisory is what the
 matcher hands the rest of the stack for the current pose.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+
+
+@dataclass(frozen=True)
+class Camera:
+    """A speed-enforcement point on a road (fixed camera or section start)."""
+    lat: float
+    lon: float
+    maxspeed: int | None        # enforced km/h, None if unknown
+    kind: str                   # "fixed" | "section"
 
 
 @dataclass(frozen=True)
@@ -25,6 +34,7 @@ class Road:
     cyclestreet: bool
     residential_score: float
     comfort_speed: int | None   # advisory km/h, None to defer to posted
+    cameras: tuple[Camera, ...] = field(default_factory=tuple)
 
 
 @dataclass(frozen=True)
@@ -41,6 +51,9 @@ class Advisory:
     cycleway_right: str = "unknown"
     cyclestreet: bool = False
     distance_m: float | None = None    # lateral distance to the matched road
+    camera_distance_m: float | None = None   # along-road meters to the next camera ahead
+    camera_limit: int | None = None          # enforced km/h there, None if unknown
+    camera_kind: str = ""                     # "fixed" | "section" | "" (none)
 
     @staticmethod
     def none() -> "Advisory":
