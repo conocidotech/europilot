@@ -15,6 +15,8 @@ Everything three-valued where the story asks for it: present / absent / unknown,
 never "no tag" silently becoming "no cycleway".
 """
 
+import math
+
 from gateway.osm.geo import (
     bearing, point_in_polygon, point_to_polyline_m, side_of_segment, way_length_m,
 )
@@ -62,12 +64,49 @@ def residential_polygons(data: OsmData) -> list[tuple[list, list]]:
     return polygons
 
 
-def in_residential(way_coords: list, polygons: list[tuple[list, list]]) -> bool:
-    """Whether a way's representative point lies in any residential polygon."""
-    if not way_coords:
+def _sample_along(coords: list, n: int = 9) -> list:
+    """n points spread evenly by arc length along the polyline.
+
+    Degrees are fine as the distance metric here -- we only need even-ish spacing
+    to test membership, not true metric length.
+    """
+    if len(coords) <= 1:
+        return list(coords)
+    cum = [0.0]
+    for a, b in zip(coords, coords[1:], strict=False):
+        cum.append(cum[-1] + math.hypot(b[0] - a[0], b[1] - a[1]))
+    total = cum[-1]
+    if total == 0:
+        return [coords[0]]
+    pts = []
+    for i in range(n):
+        target = total * i / (n - 1)
+        j = 0
+        while j < len(coords) - 2 and cum[j + 1] < target:
+            j += 1
+        seg = cum[j + 1] - cum[j]
+        f = 0.0 if seg == 0 else (target - cum[j]) / seg
+        a, b = coords[j], coords[j + 1]
+        pts.append((a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f))
+    return pts
+
+
+def in_residential(way_coords: list, polygons: list[tuple[list, list]],
+                   min_frac: float = 0.5) -> bool:
+    """Whether a way lies mostly inside a residential polygon.
+
+    A single representative point both misses a road that only partly enters an
+    area and flags a through-road that merely crosses one at its midpoint. So we
+    sample along the way and require at least ``min_frac`` of the samples inside.
+    """
+    if not way_coords or not polygons:
         return False
-    mid = way_coords[len(way_coords) // 2]
-    return any(point_in_polygon(mid, outer, holes) for outer, holes in polygons)
+    samples = _sample_along(way_coords)
+    if not samples:
+        return False
+    inside = sum(1 for p in samples
+                 if any(point_in_polygon(p, outer, holes) for outer, holes in polygons))
+    return inside / len(samples) >= min_frac
 
 
 # --- node densities along a road --------------------------------------------

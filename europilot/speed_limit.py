@@ -58,6 +58,7 @@ def main():
 
     from cereal import messaging
     from openpilot.common.realtime import Ratekeeper
+    from openpilot.common.swaglog import cloudlog
 
     pm = messaging.PubMaster([SERVICE])
     sm = messaging.SubMaster(["can", "euNdwMatrixSigns", "euMapAdvisory"])
@@ -66,45 +67,58 @@ def main():
     rsa_limit: int | None = None
     rsa_seen = 0.0
 
+    # Advisory-only: never let a fault take the process down (that soft-disables
+    # openpilot). Guard the loop body and publish a fail-closed heartbeat.
     while True:
-        sm.update(0)
-        now = time.monotonic()
+        try:
+            sm.update(0)
+            now = time.monotonic()
 
-        # RSA from raw CAN, held briefly since it's intermittent.
-        if sm.updated["can"]:
-            for msg in sm["can"]:
-                if msg.address == RSA1_ADDR:
-                    lim = speed_limit_from_can(bytes(msg.dat))
-                    if lim is not None:
-                        rsa_limit, rsa_seen = lim, now
-        rsa = rsa_limit if (rsa_limit is not None and now - rsa_seen <= RSA_HOLD_S) else None
+            # RSA from raw CAN, held briefly since it's intermittent.
+            if sm.updated["can"]:
+                for msg in sm["can"]:
+                    if msg.address == RSA1_ADDR:
+                        lim = speed_limit_from_can(bytes(msg.dat))
+                        if lim is not None:
+                            rsa_limit, rsa_seen = lim, now
+            rsa = rsa_limit if (rsa_limit is not None and now - rsa_seen <= RSA_HOLD_S) else None
 
-        # NDW from the matched matrix-sign message.
-        signs = None
-        if sm.valid["euNdwMatrixSigns"] and sm.recv_frame["euNdwMatrixSigns"] > 0:
-            signs = sm["euNdwMatrixSigns"]
+            # NDW from the matched matrix-sign message.
+            signs = None
+            if sm.valid["euNdwMatrixSigns"] and sm.recv_frame["euNdwMatrixSigns"] > 0:
+                signs = sm["euNdwMatrixSigns"]
 
-        # OSM posted limit from the matched map advisory (europilot_osmd).
-        osm = None
-        if sm.valid["euMapAdvisory"] and sm.recv_frame["euMapAdvisory"] > 0:
-            adv = sm["euMapAdvisory"]
-            if adv.valid and adv.speedLimit > 0:
-                osm = adv.speedLimit
+            # OSM posted limit from the matched map advisory (europilot_osmd).
+            osm = None
+            if sm.valid["euMapAdvisory"] and sm.recv_frame["euMapAdvisory"] > 0:
+                adv = sm["euMapAdvisory"]
+                if adv.valid and adv.speedLimit > 0:
+                    osm = adv.speedLimit
 
-        limit, source = fuse_speed_limit(
-            ndw_mandatory=mandatory_speed(signs),
-            rsa_camera=rsa,
-            ndw_advisory=advisory_speed(signs),
-            osm=osm,
-        )
+            limit, source = fuse_speed_limit(
+                ndw_mandatory=mandatory_speed(signs),
+                rsa_camera=rsa,
+                ndw_advisory=advisory_speed(signs),
+                osm=osm,
+            )
 
-        m = messaging.new_message(SERVICE)
-        dat = m.euSpeedLimit
-        dat.fetchMonoTime = int(now * 1e9)
-        dat.valid = limit is not None
-        dat.speedLimit = limit if limit is not None else -1
-        dat.source = source
-        pm.send(SERVICE, m)
+            m = messaging.new_message(SERVICE)
+            dat = m.euSpeedLimit
+            dat.fetchMonoTime = int(now * 1e9)
+            dat.valid = limit is not None
+            dat.speedLimit = limit if limit is not None else -1
+            dat.source = source
+            pm.send(SERVICE, m)
+        except Exception:
+            cloudlog.exception("europilot_speedlimitd iteration failed; publishing fail-closed")
+            try:
+                m = messaging.new_message(SERVICE)
+                m.euSpeedLimit.valid = False
+                m.euSpeedLimit.speedLimit = -1
+                m.euSpeedLimit.source = "none"
+                pm.send(SERVICE, m)
+            except Exception:
+                cloudlog.exception("europilot_speedlimitd could not publish fail-closed heartbeat")
 
         rk.keep_time()
 

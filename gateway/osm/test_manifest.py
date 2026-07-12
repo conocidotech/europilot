@@ -49,6 +49,12 @@ class TestSignVerify:
     def test_missing_signature_rejected(self):
         assert verify_manifest(build_manifest(208, 16, REFS), PUB_B64) is False
 
+    def test_non_dict_body_rejected_not_crashed(self):
+        # A 200 whose JSON body is valid but not an object must fail closed, not
+        # raise (a compromised/buggy gateway could otherwise wedge the sync).
+        for body in (5, [], None, "x", [{"tileLat": 1}]):
+            assert verify_manifest(body, PUB_B64) is False
+
     def test_signature_is_deterministic(self):
         a = sign_manifest(build_manifest(208, 16, REFS), SIGNING_B64)
         b = sign_manifest(build_manifest(208, 16, REFS), SIGNING_B64)
