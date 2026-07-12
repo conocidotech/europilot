@@ -57,8 +57,13 @@ def maxspeed(tags: dict) -> int | None:
         val = str(tags.get(key, "")).strip().lower()
         if not val:
             continue
-        if "zone" in val:
-            return _zone_number(val)
+        # zone:maxspeed is always a zone limit, whatever its value shape
+        # (NL:30, 30, NL:zone30); other keys only when the value says "zone".
+        if key == "zone:maxspeed" or "zone" in val:
+            n = _zone_number(val)
+            if n is not None:
+                return n
+            continue
         category = val.rsplit(":", 1)[-1]
         if category in _NL_IMPLICIT:
             return _NL_IMPLICIT[category]

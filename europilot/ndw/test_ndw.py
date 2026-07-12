@@ -98,6 +98,66 @@ def test_client_default_host_is_the_gateway(monkeypatch):
     assert client_mod.gateway_host() == "https://app.europilot.eu"
 
 
+# --- the signed-feed trust boundary --------------------------------------
+
+
+class _FakeResp:
+    status = 200
+
+    def __init__(self, body):
+        self._body = body
+
+    def read(self):
+        return self._body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+
+def _urlopen_returning(body_bytes):
+    def opener(url, timeout=None):
+        return _FakeResp(body_bytes)
+    return opener
+
+
+def _keypair():
+    import base64
+
+    from nacl.signing import SigningKey
+    sk = SigningKey.generate()
+    return (base64.b64encode(sk.encode()).decode(),
+            base64.b64encode(sk.verify_key.encode()).decode())
+
+
+def test_fetch_requires_a_valid_signature(monkeypatch, payload):
+    from gateway.ndw.sign import sign_snapshot
+    signing, pub = _keypair()
+    signed = json.dumps(sign_snapshot(payload, signing)).encode()
+
+    c = MatrixSignClient(host="https://example.invalid", pubkey_b64=pub)
+
+    monkeypatch.setattr(client_mod.urllib.request, "urlopen", _urlopen_returning(signed))
+    assert c._fetch((208, 20)) is not None            # good signature -> snapshot
+
+    monkeypatch.setattr(client_mod.urllib.request, "urlopen",
+                        _urlopen_returning(json.dumps(payload).encode()))
+    assert c._fetch((208, 20)) is None                # unsigned feed -> fail closed
+
+
+def test_fetch_rejects_a_snapshot_signed_by_a_wrong_key(monkeypatch, payload):
+    from gateway.ndw.sign import sign_snapshot
+    signing, _ = _keypair()
+    _, other_pub = _keypair()
+    signed = json.dumps(sign_snapshot(payload, signing)).encode()
+
+    c = MatrixSignClient(host="https://example.invalid", pubkey_b64=other_pub)
+    monkeypatch.setattr(client_mod.urllib.request, "urlopen", _urlopen_returning(signed))
+    assert c._fetch((208, 20)) is None
+
+
 # --- cold path / hot path separation --------------------------------------
 
 

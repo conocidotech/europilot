@@ -27,6 +27,13 @@ class TestTags:
         assert tags.maxspeed({"maxspeed:type": "NL:zone60"}) == 60
         assert tags.maxspeed({"maxspeed": "NL:zone30"}) == 30
 
+    def test_maxspeed_zone_key_plain_forms(self):
+        # zone:maxspeed=NL:30 and =30 are the common NL 30-zone tags and must
+        # resolve, not fall through to None (they were silently dropped before).
+        assert tags.maxspeed({"zone:maxspeed": "NL:30"}) == 30
+        assert tags.maxspeed({"zone:maxspeed": "30"}) == 30
+        assert tags.maxspeed({"zone:maxspeed": "NL:60"}) == 60
+
     def test_maxspeed_nl_implicit(self):
         assert tags.maxspeed({"maxspeed": "NL:urban"}) == 50
         assert tags.maxspeed({"maxspeed": "NL:rural"}) == 80

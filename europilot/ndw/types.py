@@ -9,6 +9,27 @@ from dataclasses import dataclass
 # Aspects that close or divert the lane the sign hangs above.
 BLOCKING = frozenset({"lane_closed", "lane_closed_ahead", "merge_left", "merge_right"})
 
+# Generous upper bound on a plausible km/h reading. The gateway feed is not
+# signed yet, so a speed here is untrusted input on its way into a fixed-width
+# capnp field; anything above this is treated as no reading.
+SPEED_MAX_KMH = 255
+
+
+def coerce_speed(value) -> int | None:
+    """A trustworthy km/h speed from raw feed JSON, or None.
+
+    A string, a float that won't parse, or an out-of-range number becomes None
+    (no reading) rather than flowing on to crash the daemon at capnp assignment
+    or to assert a bogus limit. bool is an int subclass but is never a speed.
+    """
+    if isinstance(value, bool):
+        return None
+    try:
+        s = int(value)
+    except (TypeError, ValueError):
+        return None
+    return s if 0 < s <= SPEED_MAX_KMH else None
+
 
 @dataclass(frozen=True)
 class Sign:
@@ -72,7 +93,7 @@ class Display:
         return cls(
             uuid=uuid,
             aspect=d["aspect"],
-            speed=d.get("speed"),
+            speed=coerce_speed(d.get("speed")),
             flashing=bool(d.get("flashing", False)),
             red_ring=bool(d.get("red_ring", False)),
             ts_state=d.get("ts_state", ""),

@@ -25,6 +25,15 @@ class TestResidentialMembership:
         assert residential_polygons(parse_full(b"<osm/>")) == []
         assert in_residential([(52.0, 5.0)], []) is False
 
+    def test_through_road_crossing_is_not_residential(self):
+        # A road that only crosses the area (square lon[5.00,5.02]) at its middle
+        # node: the midpoint lands inside, but most of the road is outside. The
+        # old single-point test flagged this; the fraction test must not.
+        data = parse_full(RESIDENTIAL)
+        polys = residential_polygons(data)
+        through = [(52.010, 4.980), (52.010, 5.010), (52.010, 5.040)]
+        assert in_residential(through, polys) is False
+
 
 class TestDensity:
     def test_calming_per_km(self):
