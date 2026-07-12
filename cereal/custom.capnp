@@ -114,6 +114,7 @@ struct SpeedLimit @0xda96579883444c35 {
     ndwMandatory @2;          # NDW matrix sign, red-ringed (legally binding)
     ndwAdvisory @3;           # NDW matrix sign, no red ring (advice)
     osm @4;                   # OSM static map limit (not wired yet -- EUROPILOT-35)
+    timeOfDay @5;             # NL daytime motorway default (100 km/h, 06:00-19:00)
   }
 }
 

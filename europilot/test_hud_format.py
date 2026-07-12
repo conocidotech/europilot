@@ -27,6 +27,7 @@ class TestSourceBadge:
         assert source_badge("ndwAdvisory") == "NDW"
         assert source_badge("rsaCamera") == "CAM"
         assert source_badge("osm") == "KAART"
+        assert source_badge("timeOfDay") == "DAG"
 
     def test_unknown_or_none(self):
         assert source_badge("none") is None

@@ -1,6 +1,6 @@
 """Tests for the speed-limit fusion policy."""
 
-from europilot.speed_limit import fuse_speed_limit, PRIORITY
+from europilot.speed_limit import PRIORITY, fuse_speed_limit, motorway_day_limit
 
 
 class TestFusionPriority:
@@ -14,8 +14,11 @@ class TestFusionPriority:
     def test_advisory_when_no_mandatory_or_rsa(self):
         assert fuse_speed_limit(ndw_advisory=120, osm=80) == (120, "ndwAdvisory")
 
-    def test_osm_is_the_last_fallback(self):
-        assert fuse_speed_limit(osm=80) == (80, "osm")
+    def test_osm_beats_time_of_day(self):
+        assert fuse_speed_limit(osm=80, time_of_day=100) == (80, "osm")
+
+    def test_time_of_day_is_the_last_fallback(self):
+        assert fuse_speed_limit(time_of_day=100) == (100, "timeOfDay")
 
     def test_nothing_available(self):
         assert fuse_speed_limit() == (None, "none")
@@ -32,11 +35,34 @@ class TestFusionValues:
         assert fuse_speed_limit(ndw_advisory=90) == (90, "ndwAdvisory")
 
     def test_priority_order_is_the_documented_one(self):
-        # guards the policy: mandatory, then camera, then advisory, then map
-        assert PRIORITY == ("ndwMandatory", "rsaCamera", "ndwAdvisory", "osm")
+        # guards the policy: mandatory, camera, advisory, map, then time-of-day
+        assert PRIORITY == ("ndwMandatory", "rsaCamera", "ndwAdvisory", "osm", "timeOfDay")
+
+
+class TestMotorwayDayLimit:
+    def test_daytime_on_a_motorway_is_100(self):
+        assert motorway_day_limit("motorway", 6) == 100     # window is inclusive at 06:00
+        assert motorway_day_limit("motorway", 12) == 100
+        assert motorway_day_limit("motorway", 18) == 100
+
+    def test_night_defers_to_posted_sources(self):
+        assert motorway_day_limit("motorway", 19) is None   # 19:00 is already night
+        assert motorway_day_limit("motorway", 3) is None
+        assert motorway_day_limit("motorway", 23) is None
+
+    def test_only_motorways(self):
+        assert motorway_day_limit("trunk", 12) is None
+        assert motorway_day_limit("residential", 12) is None
+        assert motorway_day_limit("", 12) is None
+
+    def test_unknown_hour_yields_nothing(self):
+        assert motorway_day_limit("motorway", None) is None
+
+    def test_it_plugs_into_fusion_as_the_daytime_fallback(self):
+        assert fuse_speed_limit(time_of_day=motorway_day_limit("motorway", 12)) == (100, "timeOfDay")
 
 
 def test_source_names_are_valid_capnp_enumerants():
     # every source fuse() can emit must exist in euSpeedLimit.Source
-    valid = {"none", "rsaCamera", "ndwMandatory", "ndwAdvisory", "osm"}
+    valid = {"none", "rsaCamera", "ndwMandatory", "ndwAdvisory", "osm", "timeOfDay"}
     assert set(PRIORITY) | {"none"} == valid
