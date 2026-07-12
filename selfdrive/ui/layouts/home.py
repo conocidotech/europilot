@@ -14,6 +14,7 @@ from openpilot.system.ui.widgets.label import gui_label
 from openpilot.system.ui.widgets import Widget
 
 HEADER_HEIGHT = 80
+WORDMARK_HEIGHT = 44  # europilot wordmark drawn at the header left
 HEAD_BUTTON_FONT_SIZE = 40
 CONTENT_MARGIN = 40
 SPACING = 25
@@ -31,6 +32,9 @@ class HomeLayout(Widget):
   def __init__(self):
     super().__init__()
     self.params = Params()
+
+    # europilot branding: wordmark shown at the header left (keeps aspect ratio)
+    self._wordmark = gui_app.texture("images/europilot_wordmark.png", WORDMARK_HEIGHT * 4, WORDMARK_HEIGHT)
 
     self.update_alert = UpdateAlert()
     self.offroad_alert = OffroadAlert()
@@ -124,10 +128,11 @@ class HomeLayout(Widget):
       self.content_rect.x + left_width + SPACING, self.content_rect.y, RIGHT_COLUMN_WIDTH, self.content_rect.height
     )
 
-    self.update_notif_rect.x = self.header_rect.x
+    brand_w = self._wordmark.width + SPACING   # reserve the header-left wordmark space
+    self.update_notif_rect.x = self.header_rect.x + brand_w
     self.update_notif_rect.y = self.header_rect.y + (self.header_rect.height - 60) // 2
 
-    notif_x = self.header_rect.x + (220 if self.update_available else 0)
+    notif_x = self.header_rect.x + brand_w + (220 if self.update_available else 0)
     self.alert_notif_rect.x = notif_x
     self.alert_notif_rect.y = self.header_rect.y + (self.header_rect.height - 60) // 2
 
@@ -141,6 +146,10 @@ class HomeLayout(Widget):
 
   def _render_header(self):
     font = gui_app.font(FontWeight.MEDIUM)
+
+    # europilot wordmark, vertically centred at the header left
+    wm_y = self.header_rect.y + (self.header_rect.height - self._wordmark.height) / 2
+    rl.draw_texture_v(self._wordmark, rl.Vector2(int(self.header_rect.x), int(wm_y)), rl.WHITE)
 
     version_text_width = self.header_rect.width
 
