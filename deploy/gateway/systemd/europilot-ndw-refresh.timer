@@ -1,0 +1,12 @@
+[Unit]
+Description=Weekly Europilot NDW MSI shapefile refresh
+Documentation=https://app.europilot.eu
+
+[Timer]
+# Weekly, off-peak. Persistent so a missed run (host down) fires on next boot.
+OnCalendar=Sun *-*-* 04:00:00
+RandomizedDelaySec=900
+Persistent=true
+
+[Install]
+WantedBy=timers.target
