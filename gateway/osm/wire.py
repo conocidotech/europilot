@@ -30,6 +30,7 @@ _ROAD_CLASS_ENUM = {
     "residential": "residential", "living_street": "livingStreet", "service": "service",
 }
 _PRESENCE_ENUM = {None: "unknown", False: "absent", True: "present"}
+_CAMERA_KIND_ENUM = {"fixed": "fixed", "section": "section"}
 
 _SCHEMA = None
 
@@ -43,13 +44,22 @@ def _u8(value) -> int:
     return min(255, max(0, int(value or 0)))
 
 
+def normalize_camera(cam: dict) -> dict:
+    """Canonical, wire-ready form of one camera (point scaled, kind -> enum)."""
+    return {
+        "point": [_scale(cam["lat"]), _scale(cam["lon"])],
+        "maxspeed": _u8(cam.get("maxspeed")),
+        "kind": _CAMERA_KIND_ENUM.get(cam.get("kind"), "fixed"),
+    }
+
+
 def normalize_road(rec: dict) -> dict:
     """Canonical, wire-ready form of one derived way record.
 
     Accepts both slice-1 records and the full spatial records; missing spatial
     attributes fall back to their unknown/absent defaults.
     """
-    return {
+    road = {
         "id": int(rec["id"]),
         "roadClass": _ROAD_CLASS_ENUM.get(rec.get("roadClass"), "unknown"),
         "maxspeed": _u8(rec.get("maxspeed")),
@@ -66,6 +76,12 @@ def normalize_road(rec: dict) -> dict:
         "residentialScore": round(float(rec.get("residentialScore", 0.0)), 3),
         "comfortSpeed": _u8(rec.get("comfortSpeed")),
     }
+    # Only carried when present, so a camera-less tile hashes exactly as before
+    # (no needless re-sync of every tile when this field was introduced).
+    cameras = [normalize_camera(c) for c in rec.get("cameras", [])]
+    if cameras:
+        road["cameras"] = sorted(cameras, key=lambda c: (c["point"][0], c["point"][1], c["kind"]))
+    return road
 
 
 def normalize_tile(tile_lat: int, tile_lon: int, records: list[dict],
@@ -138,6 +154,13 @@ def to_capnp_bytes(norm: dict, *, generated_at_unix_s: int = 0) -> bytes:
         for j, (lat, lon) in enumerate(rn["points"]):
             pts[j].lat = lat
             pts[j].lon = lon
+        cams = rn.get("cameras", [])
+        cam_list = r.init("cameras", len(cams))
+        for k, cn in enumerate(cams):
+            cam_list[k].point.lat = cn["point"][0]
+            cam_list[k].point.lon = cn["point"][1]
+            cam_list[k].maxspeed = cn["maxspeed"]
+            cam_list[k].kind = cn["kind"]
     return tile.to_bytes()
 
 
@@ -179,5 +202,7 @@ def from_capnp_bytes(data: bytes) -> dict:
                 "residentialScore": r.residentialScore,
                 "comfortSpeed": r.comfortSpeed,
                 "points": [[p.lat, p.lon] for p in r.points],
+                "cameras": [{"point": [c.point.lat, c.point.lon],
+                             "maxspeed": c.maxspeed, "kind": str(c.kind)} for c in r.cameras],
             } for r in tile.roads],
         }
