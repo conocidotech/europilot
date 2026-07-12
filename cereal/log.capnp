@@ -2562,7 +2562,7 @@ struct Event {
     # DON'T change the ID (e.g. @107)
     # DON'T change which struct it points to
     euNdwMatrixSigns @107 :Custom.NdwMatrixSigns;
-    customReserved1 @108 :Custom.CustomReserved1;
+    euMapAdvisory @108 :Custom.MapAdvisory;
     customReserved2 @109 :Custom.CustomReserved2;
     euSpeedLimit @110 :Custom.SpeedLimit;
     customReserved4 @111 :Custom.CustomReserved4;

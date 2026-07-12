@@ -56,14 +56,44 @@ struct NdwMatrixSigns @0x81c2f05a394cf4af {
   }
 }
 
-# Slots for the two remaining tile-distributed EU sources (OSM map context and
-# C-ITS SPaT/MAP traffic lights). Deliberately still RESERVED: like NDW, each is
-# distributed as tiles and matched against the ego pose ON THE DEVICE, so its
-# bus schema falls out of the matcher -- and there is no gateway endpoint or
-# matcher for them yet. Define each one together with its pipeline.
+struct MapAdvisory @0xaedffd8f31e7b55d {
+  # Result of matching the ego pose against the OSM tile the device holds.
+  #
+  # Like NDW, matching happens ON THE DEVICE (europilot/osm/match.py): which road
+  # you are on and how far off it you are depend on the precise pose, which
+  # changes far faster than the gateway refreshes. The gateway only serves signed
+  # tiles of road geometry + attributes; europilot_osmd matches and publishes.
+  #
+  # Advisory only: OSM is a nudge that raises priors, never a filter and never
+  # authoritative for control. speedLimit feeds euSpeedLimit fusion (osm source).
+  fetchMonoTime @0 :UInt64;    # monotonic ns when this was published
+  valid @1 :Bool;             # false when no road matched (or no tile yet)
 
-struct CustomReserved1 @0xaedffd8f31e7b55d {
+  roadClass @2 :Text;          # e.g. "residential"; "" if unknown
+  name @3 :Text;               # street name; "" if none
+  speedLimit @4 :Int16;        # OSM posted km/h; -1 unknown
+  comfortSpeed @5 :Int16;      # advisory comfort km/h; -1 none
+  inResidential @6 :Bool;
+  cyclewayLeft @7 :Presence;
+  cyclewayRight @8 :Presence;
+  cyclestreet @9 :Bool;
+  distance @10 :Float32;       # lateral meters to the matched road; -1 unknown
+
+  # Three-valued on purpose: unknown is NOT absent (no tag and no parallel path
+  # seen), carried through from the tile so the device never reads silence as
+  # "no bike path here".
+  enum Presence {
+    unknown @0;
+    absent @1;
+    present @2;
+  }
 }
+
+# The last tile-distributed EU source (C-ITS SPaT/MAP traffic lights). Still
+# RESERVED: like NDW and OSM it is distributed as tiles and matched against the
+# ego pose ON THE DEVICE, so its bus schema falls out of the matcher -- and there
+# is no gateway endpoint or matcher for it yet. Define it together with its
+# pipeline.
 
 struct CustomReserved2 @0xf35cc4560bbf6ec2 {
 }
