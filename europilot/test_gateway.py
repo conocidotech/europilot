@@ -1,131 +1,96 @@
-"""Tests for the Europilot data-gateway client.
+"""Tests for europilotd's Gantry -> capnp fill.
 
-Covers the untrusted-input surface: Ed25519 verification, freshness/replay
-rejection, and the normalizers that coerce gateway JSON into safe, typed
-values (including bogus enums and out-of-range numbers). The msgq/capnp
-publish path in main() needs a compiled cereal and is exercised on-device.
+The fetch/match half is europilot.ndw's (covered by its own tests); what is new
+here is writing a matched Gantry onto the bus message. A fake builder stands in
+for the capnp struct so this runs without a compiled cereal -- it records what
+was written, which is exactly what we want to assert.
 """
 
-import json
-import base64
-from nacl.signing import SigningKey
-
-from europilot.gateway import (
-    GatewayClient,
-    normalize_matrix_signs,
-    normalize_map_data,
-    normalize_traffic_lights,
-    normalize_speed_limit,
-    MAX_PAYLOAD_AGE,
-)
+from europilot.gateway import fill_gantry
+from europilot.ndw.types import Display, Gantry
 
 
-def make_signed(payload: dict, sk: SigningKey | None = None) -> tuple[bytes, SigningKey]:
-    sk = sk or SigningKey.generate()
-    payload_bytes = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode()
-    sig = sk.sign(payload_bytes).signature
-    body = json.dumps({
-        **payload,
-        "signature": base64.b64encode(sig).decode(),
-        "public_key": base64.b64encode(sk.verify_key.encode()).decode(),
-    }).encode()
-    return body, sk
+class FakeBuilder:
+    """Records attribute writes and list inits like a capnp struct builder."""
+
+    def __init__(self):
+        object.__setattr__(self, "_written", {})
+
+    def __setattr__(self, name, value):
+        self._written[name] = value
+
+    def init(self, name, count):
+        lst = [0] * count
+        self._written[name] = lst
+        return lst
+
+    def __getitem__(self, name):
+        return self._written[name]
+
+    def __contains__(self, name):
+        return name in self._written
 
 
-def client_for(sk: SigningKey) -> GatewayClient:
-    return GatewayClient(public_key_b64=base64.b64encode(sk.verify_key.encode()).decode())
+def display(aspect="speedlimit", speed=None, red_ring=False, flashing=False):
+    return Display(uuid="u", aspect=aspect, speed=speed, flashing=flashing,
+                   red_ring=red_ring, ts_state="")
 
 
-class TestVerification:
-    def test_valid_signature(self):
-        raw, sk = make_signed({"timestamp": 1700000000, "speed_limit": {"value": 130}})
-        data = client_for(sk)._verify_and_parse(raw)
-        assert data is not None
-        assert data["speed_limit"]["value"] == 130
-
-    def test_tampered_payload_rejected(self):
-        raw, sk = make_signed({"timestamp": 1700000000, "speed_limit": {"value": 130}})
-        tampered = raw.replace(b"130", b"999")
-        assert client_for(sk)._verify_and_parse(tampered) is None
-
-    def test_wrong_key_rejected(self):
-        raw, _ = make_signed({"timestamp": 1700000000})
-        other = client_for(SigningKey.generate())  # different key
-        assert other._verify_and_parse(raw) is None
-
-    def test_garbage_rejected(self):
-        c = client_for(SigningKey.generate())
-        for junk in (b"not json", b"[]", b"123", b'{"no":"sig"}'):
-            assert c._verify_and_parse(junk) is None
-
-    def test_stale_payload_rejected(self):
-        c = client_for(SigningKey.generate())
-        fresh = {"timestamp": 1000.0}
-        assert c._fresh(fresh, now=1000.0 + MAX_PAYLOAD_AGE - 1)
-        assert not c._fresh(fresh, now=1000.0 + MAX_PAYLOAD_AGE + 1)
-        # missing timestamp is allowed (freshness enforced by poll cadence)
-        assert c._fresh({}, now=1e12)
+def gantry(lanes, distance_m=120.0, road="A2", carriageway="R"):
+    return Gantry(road=road, carriageway=carriageway, km=1.0, wvk_id="w",
+                  distance_m=distance_m, lanes=lanes)
 
 
-class TestNormalizers:
-    def test_matrix_signs_valid(self):
-        out = normalize_matrix_signs({"signs": [
-            {"lane_index": 1, "kind": "speedLimit", "speed_limit": 100,
-             "distance": 250.0, "lat": 52.1, "lon": 4.9},
-        ]})
-        s = out["signs"][0]
-        assert s["kind"] == "speedLimit"
-        assert s["speedLimit"] == 100
-        assert s["laneIndex"] == 1
+class TestFillGantry:
+    def test_miss_marks_invalid(self):
+        b = FakeBuilder()
+        fill_gantry(b, None)
+        assert b["valid"] is False
+        # nothing else should be written for a miss
+        assert "targetSpeed" not in b
 
-    def test_matrix_signs_bogus_enum_and_ranges(self):
-        out = normalize_matrix_signs({"signs": [
-            {"lane_index": 999, "kind": "DROP TABLE", "speed_limit": "x"},
-        ]})
-        s = out["signs"][0]
-        assert s["kind"] == "none"        # unknown enum -> safe default
-        assert s["laneIndex"] == 15       # clamped
-        assert s["speedLimit"] == -1      # unparseable -> unknown
+    def test_mandatory_and_advisory_stay_apart(self):
+        # lane 1 shows a red-ringed 70 (binding), lane 2 an un-ringed 90 (advice)
+        g = gantry({
+            1: display(speed=70, red_ring=True),
+            2: display(speed=90, red_ring=False),
+        })
+        b = FakeBuilder()
+        fill_gantry(b, g)
+        assert b["valid"] is True
+        assert b["mandatorySpeed"] == 70
+        assert b["advisorySpeed"] == 90
+        assert b["targetSpeed"] == 70   # lower of the two
 
-    def test_matrix_signs_empty(self):
-        assert normalize_matrix_signs({})["signs"] == []
-        assert normalize_matrix_signs(None)["signs"] == []
+    def test_absent_speeds_become_minus_one(self):
+        g = gantry({1: display(aspect="lane_closed", speed=None)})
+        b = FakeBuilder()
+        fill_gantry(b, g)
+        assert b["mandatorySpeed"] == -1
+        assert b["advisorySpeed"] == -1
+        assert b["targetSpeed"] == -1
 
-    def test_map_data_defaults_and_enum(self):
-        out = normalize_map_data({"current_road": {"road_class": "nonsense"}})
-        assert out["currentRoad"]["roadClass"] == "unknown"
-        assert out["currentRoad"]["speedLimit"] == -1
-        assert out["upcoming"] == []
+    def test_closed_lanes_and_flashing(self):
+        g = gantry({
+            1: display(aspect="lane_closed"),
+            2: display(speed=50, red_ring=True, flashing=True),
+            3: display(aspect="merge_left"),
+        })
+        b = FakeBuilder()
+        fill_gantry(b, g)
+        assert b["closedLanes"] == [1, 3]
+        assert b["flashing"] is True
 
-    def test_map_data_upcoming(self):
-        out = normalize_map_data({"upcoming": [
-            {"kind": "curve", "distance": 120.0, "curvature": 0.01},
-            {"kind": "bogus"},
-        ]})
-        assert out["upcoming"][0]["kind"] == "curve"
-        assert out["upcoming"][1]["kind"] == "speedChange"  # default
+    def test_no_closed_lanes_writes_empty_list(self):
+        b = FakeBuilder()
+        fill_gantry(b, gantry({1: display(speed=100, red_ring=True)}))
+        assert b["closedLanes"] == []
+        assert b["flashing"] is False
 
-    def test_traffic_lights(self):
-        out = normalize_traffic_lights({"intersections": [
-            {"id": 42, "distance": 60.0, "movements": [
-                {"signal_group": 1, "phase": "green", "time_to_change": 4.5},
-                {"signal_group": 300, "phase": "explode"},
-            ]},
-        ]})
-        i = out["intersections"][0]
-        assert i["intersectionId"] == 42
-        assert i["movements"][0]["phase"] == "green"
-        assert i["movements"][1]["phase"] == "unknown"     # bad enum
-        assert i["movements"][1]["signalGroupId"] == 255   # clamped
-
-    def test_speed_limit_confidence_clamped(self):
-        assert normalize_speed_limit({"confidence": 5.0})["confidence"] == 1.0
-        assert normalize_speed_limit({"confidence": -2.0})["confidence"] == 0.0
-        assert normalize_speed_limit({"source": "hack"})["source"] == "none"
-        assert normalize_speed_limit({"value": 130, "source": "osm"}) == \
-            {"speedLimit": 130, "source": "osm", "confidence": 0.0}
-
-    def test_nan_inf_rejected(self):
-        # advisory floats must never carry NaN/inf
-        out = normalize_map_data({"upcoming": [{"kind": "curve", "curvature": float("inf")}]})
-        assert out["upcoming"][0]["curvature"] == 0.0
+    def test_geometry_and_identity_carried_through(self):
+        b = FakeBuilder()
+        fill_gantry(b, gantry({1: display(speed=100, red_ring=True)},
+                              distance_m=-45.0, road="A12", carriageway="L"))
+        assert b["distance"] == -45.0   # negative: already passed
+        assert b["road"] == "A12"
+        assert b["carriageway"] == "L"

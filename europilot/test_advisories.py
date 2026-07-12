@@ -1,109 +1,95 @@
-"""Tests for the Europilot gateway advisory consumer helpers.
+"""Tests for the NDW matrix-sign advisory consumer helpers.
 
-The selection logic is pure and reads its inputs via attribute access, so we
-drive it with lightweight test doubles that mimic the capnp readers.
+The accessors are pure and read via attribute access, so we drive them with
+lightweight doubles that mimic the capnp readers.
 """
 
 from types import SimpleNamespace as NS
 
 from europilot.advisories import (
-    resolve_speed_limit,
-    relevant_matrix_speed,
-    advised_speed_limit,
-    nearest_stop_signal,
-    upcoming_speed_change,
+    governing_gantry,
+    upcoming_gantry,
+    mandatory_speed,
+    advisory_speed,
+    target_speed,
+    upcoming_target_speed,
+    closed_lanes,
+    is_flashing,
 )
 
 
-def sign(kind="speedLimit", speed=100, lane=-1, distance=100.0):
-    return NS(kind=kind, speedLimit=speed, laneIndex=lane, distance=distance)
+def gantry(valid=True, distance=100.0, mandatory=-1, advisory=-1, target=-1,
+           flashing=False, lanes=()):
+    return NS(valid=valid, distance=distance, mandatorySpeed=mandatory,
+              advisorySpeed=advisory, targetSpeed=target, flashing=flashing,
+              closedLanes=list(lanes), road="A2", carriageway="R")
 
 
-def movement(phase="green", ttc=-1.0):
-    return NS(phase=phase, timeToChange=ttc)
+def signs(valid=True, governing=None, upcoming=None):
+    return NS(valid=valid,
+              governing=governing if governing is not None else gantry(valid=False),
+              upcoming=upcoming if upcoming is not None else gantry(valid=False))
 
 
-def intersection(iid=1, distance=50.0, movements=()):
-    return NS(intersectionId=iid, distance=distance, movements=list(movements))
+class TestValidity:
+    def test_no_message_yields_nothing(self):
+        assert governing_gantry(None) is None
+        assert mandatory_speed(None) is None
+        assert closed_lanes(None) == []
+        assert is_flashing(None) is False
+
+    def test_invalid_message_yields_nothing(self):
+        s = signs(valid=False, governing=gantry(mandatory=100))
+        assert governing_gantry(s) is None
+        assert mandatory_speed(s) is None
+
+    def test_unmatched_gantry_yields_nothing(self):
+        s = signs(governing=gantry(valid=False, mandatory=100))
+        assert governing_gantry(s) is None
+        assert mandatory_speed(s) is None
 
 
-class TestSpeedLimit:
-    def test_resolve_valid(self):
-        assert resolve_speed_limit(NS(valid=True, speedLimit=130)) == 130
+class TestSpeeds:
+    def test_mandatory_and_advisory_are_not_conflated(self):
+        s = signs(governing=gantry(mandatory=70, advisory=90, target=70))
+        assert mandatory_speed(s) == 70
+        assert advisory_speed(s) == 90
+        assert target_speed(s) == 70
 
-    def test_resolve_invalid_or_unknown(self):
-        assert resolve_speed_limit(NS(valid=False, speedLimit=130)) is None
-        assert resolve_speed_limit(NS(valid=True, speedLimit=-1)) is None
-        assert resolve_speed_limit(None) is None
+    def test_advisory_only_gantry_has_no_mandatory_speed(self):
+        s = signs(governing=gantry(mandatory=-1, advisory=90, target=90))
+        assert mandatory_speed(s) is None      # nothing legally binding shown
+        assert advisory_speed(s) == 90
+        assert target_speed(s) == 90
 
-    def test_matrix_picks_nearest_applicable(self):
-        signs = [
-            sign(speed=100, lane=-1, distance=300.0),
-            sign(speed=80, lane=1, distance=120.0),   # ego lane, nearer
-            sign(speed=50, lane=2, distance=60.0),     # other lane, ignored
-        ]
-        assert relevant_matrix_speed(signs, ego_lane=1) == 80
-
-    def test_matrix_ignores_non_speed_and_unknown(self):
-        signs = [sign(kind="laneClosed", speed=-1, lane=-1),
-                 sign(kind="speedLimit", speed=-1, lane=-1)]
-        assert relevant_matrix_speed(signs, ego_lane=0) is None
-
-    def test_matrix_all_lane_applies(self):
-        assert relevant_matrix_speed([sign(speed=90, lane=-1)], ego_lane=3) == 90
-
-    def test_advised_prefers_live_matrix_over_resolved(self):
-        sl = NS(valid=True, speedLimit=130)
-        signs = [sign(speed=90, lane=-1, distance=100.0)]
-        assert advised_speed_limit(sl, signs, ego_lane=0) == 90
-
-    def test_advised_falls_back_to_resolved(self):
-        sl = NS(valid=True, speedLimit=130)
-        assert advised_speed_limit(sl, [], ego_lane=0) == 130
-
-    def test_advised_none_when_nothing(self):
-        assert advised_speed_limit(NS(valid=False, speedLimit=0), [], 0) is None
+    def test_gantry_showing_no_speed(self):
+        s = signs(governing=gantry(mandatory=-1, advisory=-1, target=-1))
+        assert mandatory_speed(s) is None
+        assert advisory_speed(s) is None
+        assert target_speed(s) is None
 
 
-class TestTrafficLights:
-    def test_nearest_stop_signal(self):
-        inter = [
-            intersection(iid=1, distance=200.0, movements=[movement("green")]),
-            intersection(iid=2, distance=80.0, movements=[movement("red", ttc=6.0)]),
-            intersection(iid=3, distance=150.0, movements=[movement("amber", ttc=2.0)]),
-        ]
-        out = nearest_stop_signal(inter)
-        assert out["intersectionId"] == 2
-        assert out["distance"] == 80.0
-        assert out["timeToChange"] == 6.0
+class TestUpcoming:
+    def test_upcoming_speed_and_distance(self):
+        s = signs(upcoming=gantry(target=50, distance=300.0))
+        assert upcoming_target_speed(s) == (50, 300.0)
+        assert upcoming_gantry(s) is not None
 
-    def test_no_stop_signal_when_all_green(self):
-        inter = [intersection(movements=[movement("green"), movement("green")])]
-        assert nearest_stop_signal(inter) is None
+    def test_no_upcoming_gantry(self):
+        assert upcoming_target_speed(signs()) is None
 
-    def test_soonest_ttc_among_stop_movements(self):
-        inter = [intersection(distance=40.0, movements=[
-            movement("red", ttc=9.0), movement("red", ttc=3.0), movement("red", ttc=-1.0)])]
-        assert nearest_stop_signal(inter)["timeToChange"] == 3.0
-
-    def test_ttc_unknown_when_none_reported(self):
-        inter = [intersection(movements=[movement("red", ttc=-1.0)])]
-        assert nearest_stop_signal(inter)["timeToChange"] == -1.0
+    def test_upcoming_without_a_speed(self):
+        assert upcoming_target_speed(signs(upcoming=gantry(target=-1))) is None
 
 
-class TestMapNudge:
-    def test_nearest_speed_change(self):
-        md = NS(valid=True, upcoming=[
-            NS(kind="speedChange", speedLimit=50, distance=300.0),
-            NS(kind="speedChange", speedLimit=70, distance=120.0),
-            NS(kind="curve", speedLimit=-1, distance=40.0),
-        ])
-        assert upcoming_speed_change(md) == {"speedLimit": 70, "distance": 120.0}
+class TestLanesAndFlashing:
+    def test_closed_lanes(self):
+        s = signs(governing=gantry(lanes=[1, 3]))
+        assert closed_lanes(s) == [1, 3]
 
-    def test_invalid_map_data(self):
-        assert upcoming_speed_change(NS(valid=False, upcoming=[])) is None
-        assert upcoming_speed_change(None) is None
+    def test_no_closed_lanes(self):
+        assert closed_lanes(signs(governing=gantry())) == []
 
-    def test_no_speed_change_feature(self):
-        md = NS(valid=True, upcoming=[NS(kind="curve", speedLimit=-1, distance=40.0)])
-        assert upcoming_speed_change(md) is None
+    def test_flashing(self):
+        assert is_flashing(signs(governing=gantry(flashing=True))) is True
+        assert is_flashing(signs(governing=gantry(flashing=False))) is False

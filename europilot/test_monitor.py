@@ -1,20 +1,24 @@
-"""Tests for the Europilot gateway monitor formatting."""
+"""Tests for the Europilot matrix-sign monitor formatting."""
 
 from europilot.monitor import format_summary
 
 
 class TestFormatSummary:
-    def test_all_present(self):
-        out = format_summary(
-            100,
-            {"intersectionId": 2, "distance": 80.0, "timeToChange": 6.0},
-            {"speedLimit": 70, "distance": 120.0},
-        )
-        assert out == "limit=100 km/h | stop@80m(ttc 6s) | next 70km/h in 120m"
+    def test_mandatory_is_labelled_and_wins(self):
+        out = format_summary(70, 90, None, [], False)
+        assert out == "now=70 km/h (mandatory) | next=--"
 
-    def test_all_absent(self):
-        assert format_summary(None, None, None) == "limit=-- | stop=-- | next=--"
+    def test_advisory_when_nothing_binding(self):
+        out = format_summary(None, 90, None, [], False)
+        assert out == "now=90 km/h (advisory) | next=--"
 
-    def test_unknown_ttc(self):
-        out = format_summary(None, {"distance": 40.0, "timeToChange": -1.0}, None)
-        assert out == "limit=-- | stop@40m(ttc ?) | next=--"
+    def test_nothing_shown(self):
+        assert format_summary(None, None, None, [], False) == "now=-- | next=--"
+
+    def test_upcoming_gantry(self):
+        out = format_summary(100, None, (50, 300.0), [], False)
+        assert out == "now=100 km/h (mandatory) | next=50km/h in 300m"
+
+    def test_closed_lanes_and_flashing(self):
+        out = format_summary(50, None, None, [1, 3], True)
+        assert out == "now=50 km/h (mandatory) | next=-- | closed=1,3 | FLASHING"

@@ -24,120 +24,52 @@ $Cxx.namespace("cereal");
 # ---------------------------------------------------------------------------
 
 struct NdwMatrixSigns @0x81c2f05a394cf4af {
-  # Dynamic NDW matrix signs above the road (speed / lane signalling).
-  fetchMonoTime @0 :UInt64;    # monotonic ns when the gateway data was received
+  # Result of matching the ego pose against an NDW matrix-sign region snapshot.
+  #
+  # Matching happens ON THE DEVICE (europilot/ndw/match.py): distance to a
+  # gantry and which lane governs us depend on the precise pose, which changes
+  # far faster than the gateway poll. The gateway only serves tile snapshots of
+  # sign geometry + live aspects; europilotd matches and publishes the result.
+  fetchMonoTime @0 :UInt64;    # monotonic ns when this was published
   valid @1 :Bool;
-  signs @2 :List(Sign);
+  snapshotAge @2 :Float32;     # seconds since the gateway's last good NDW refresh
 
-  struct Sign {
-    laneIndex @0 :Int8;        # 0 = rightmost lane; -1 = applies to all lanes
-    kind @1 :Kind;
-    speedLimit @2 :Int16;      # km/h; -1 if not a speed sign
-    distance @3 :Float32;      # meters ahead
-    latitude @4 :Float64;
-    longitude @5 :Float64;
+  governing @3 :Gantry;        # the gantry we last passed: governs us now
+  upcoming @4 :Gantry;         # the next gantry ahead: lets us slow down early
 
-    enum Kind {
-      none @0;
-      speedLimit @1;
-      endSpeedLimit @2;
-      laneClosed @3;           # red cross
-      laneOpen @4;             # green arrow
-      mergeLeft @5;
-      mergeRight @6;
-      hardShoulderOpen @7;
-      warning @8;
-    }
+  struct Gantry {
+    valid @0 :Bool;            # false when no gantry matched
+    distance @1 :Float32;      # meters along the heading axis; negative = passed
+
+    # A Dutch matrix sign shows a speed either with a red ring (legally binding)
+    # or without one (advice). Keeping them apart is legally meaningful, so we
+    # never collapse them into a single number.
+    mandatorySpeed @2 :Int16;  # km/h, red-ringed: binding;  -1 = none shown
+    advisorySpeed @3 :Int16;   # km/h, no red ring: advice;   -1 = none shown
+    targetSpeed @4 :Int16;     # lowest of the two: what a controller aims for; -1 = none
+
+    flashing @5 :Bool;
+    closedLanes @6 :List(Int8);  # lane indices closed or diverted at this gantry
+
+    road @7 :Text;             # e.g. "A2"
+    carriageway @8 :Text;
   }
 }
 
-struct MapData @0xaedffd8f31e7b55d {
-  # OSM-derived road context. GUIDANCE ONLY: raises attention / priors, must
-  # never filter or gate perception.
-  fetchMonoTime @0 :UInt64;
-  valid @1 :Bool;
-  currentRoad @2 :Road;
-  upcoming @3 :List(Feature);
+# Slots for the remaining EU data sources (OSM map context, C-ITS SPaT/MAP
+# traffic lights, a fused speed limit). Deliberately still RESERVED: like NDW,
+# each of these is distributed as tiles and matched against the ego pose ON THE
+# DEVICE, so their bus schema falls out of the matcher -- and there is no
+# gateway endpoint or matcher for them yet. Define each one together with its
+# pipeline rather than guessing the shape up front.
 
-  struct Road {
-    speedLimit @0 :Int16;      # km/h; -1 unknown
-    roadClass @1 :RoadClass;
-    name @2 :Text;
-    oneWay @3 :Bool;
-  }
-
-  struct Feature {
-    kind @0 :FeatureKind;
-    distance @1 :Float32;      # meters ahead
-    speedLimit @2 :Int16;      # km/h for an upcoming speed change; -1 n/a
-    curvature @3 :Float32;     # 1/m, signed; 0 if n/a
-  }
-
-  enum RoadClass {
-    unknown @0;
-    motorway @1;
-    trunk @2;
-    primary @3;
-    secondary @4;
-    tertiary @5;
-    residential @6;
-    service @7;
-  }
-
-  enum FeatureKind {
-    speedChange @0;
-    curve @1;
-    junction @2;
-    roundabout @3;
-    stopSign @4;
-    trafficLight @5;
-  }
+struct CustomReserved1 @0xaedffd8f31e7b55d {
 }
 
-struct TrafficLightState @0xf35cc4560bbf6ec2 {
-  # C-ITS SPaT/MAP traffic-light data. ADVISORY ONLY, never authoritative for
-  # control.
-  fetchMonoTime @0 :UInt64;
-  valid @1 :Bool;
-  intersections @2 :List(Intersection);
-
-  struct Intersection {
-    intersectionId @0 :UInt32;
-    distance @1 :Float32;      # meters to the stop line
-    movements @2 :List(Movement);
-  }
-
-  struct Movement {
-    signalGroupId @0 :UInt8;
-    phase @1 :Phase;
-    timeToChange @2 :Float32;  # seconds until the next phase; -1 unknown
-  }
-
-  enum Phase {
-    unknown @0;
-    red @1;
-    amber @2;
-    green @3;
-    flashingAmber @4;
-  }
+struct CustomReserved2 @0xf35cc4560bbf6ec2 {
 }
 
-struct SpeedLimit @0xda96579883444c35 {
-  # Resolved advisory speed limit, fused from the sources below. Surfaced to
-  # the driver; never used to hard-limit control.
-  fetchMonoTime @0 :UInt64;
-  valid @1 :Bool;
-  speedLimit @2 :Int16;        # km/h; -1 unknown
-  source @3 :Source;
-  confidence @4 :Float32;      # 0..1
-
-  enum Source {
-    none @0;
-    osm @1;
-    ndwMatrix @2;
-    camera @3;
-    combined @4;
-  }
+struct CustomReserved3 @0xda96579883444c35 {
 }
 
 struct CustomReserved4 @0x80ae746ee2596b11 {

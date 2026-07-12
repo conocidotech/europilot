@@ -141,6 +141,7 @@ markers = [
 ]
 testpaths = [
   "europilot",
+  "gateway",
   "common",
   "selfdrive",
   "system",

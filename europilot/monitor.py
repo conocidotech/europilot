@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Live monitor for the Europilot gateway advisories.
+"""Live monitor for the Europilot NDW matrix-sign advisories.
 
-A read-only consumer of GatewayAdvisories, meant for on-device validation of
-the gateway pipeline: run it while ``europilotd`` is up and watch the resolved
-advisory speed limit, the nearest stop signal, and the next OSM speed change
-tick by. It touches no control path.
+A read-only consumer of GatewayAdvisories, for on-device validation of the
+gateway pipeline: run it while ``europilotd`` is up and watch the governing
+gantry, the next one ahead, and any closed lanes tick by. Touches no control
+path.
 
 Usage (on device / in the sim):
     python -m europilot.monitor
@@ -17,34 +17,40 @@ from europilot.advisories import GatewayAdvisories
 MONITOR_HZ = 2.0
 
 
-def format_summary(speed_limit, stop_signal, speed_change) -> str:
+def format_summary(mandatory, advisory, upcoming, lanes, flashing) -> str:
     """Render one status line from the plain values the accessors return."""
-    parts = [f"limit={speed_limit} km/h" if speed_limit else "limit=--"]
-
-    if stop_signal:
-        ttc = stop_signal["timeToChange"]
-        ttc_str = f"{ttc:.0f}s" if ttc >= 0 else "?"
-        parts.append(f"stop@{stop_signal['distance']:.0f}m(ttc {ttc_str})")
+    if mandatory is not None:
+        speed = f"{mandatory} km/h (mandatory)"
+    elif advisory is not None:
+        speed = f"{advisory} km/h (advisory)"
     else:
-        parts.append("stop=--")
+        speed = "--"
+    parts = [f"now={speed}"]
 
-    if speed_change:
-        parts.append(f"next {speed_change['speedLimit']}km/h in {speed_change['distance']:.0f}m")
+    if upcoming is not None:
+        limit, distance = upcoming
+        parts.append(f"next={limit}km/h in {distance:.0f}m")
     else:
         parts.append("next=--")
+
+    if lanes:
+        parts.append("closed=" + ",".join(str(x) for x in lanes))
+    if flashing:
+        parts.append("FLASHING")
 
     return " | ".join(parts)
 
 
-def main(ego_lane: int = 0):
+def main():
     from openpilot.common.realtime import Ratekeeper
 
     adv = GatewayAdvisories()
     rk = Ratekeeper(MONITOR_HZ, print_delay_threshold=None)
     while True:
         adv.update()
-        print(format_summary(adv.speed_limit(ego_lane), adv.stop_signal(), adv.next_speed_change()),
-              flush=True)
+        print(format_summary(adv.mandatory_speed(), adv.advisory_speed(),
+                             adv.upcoming_target_speed(), adv.closed_lanes(),
+                             adv.is_flashing()), flush=True)
         rk.keep_time()
 
 

@@ -2562,9 +2562,9 @@ struct Event {
     # DON'T change the ID (e.g. @107)
     # DON'T change which struct it points to
     euNdwMatrixSigns @107 :Custom.NdwMatrixSigns;
-    euMapData @108 :Custom.MapData;
-    euTrafficLightState @109 :Custom.TrafficLightState;
-    euSpeedLimit @110 :Custom.SpeedLimit;
+    customReserved1 @108 :Custom.CustomReserved1;
+    customReserved2 @109 :Custom.CustomReserved2;
+    customReserved3 @110 :Custom.CustomReserved3;
     customReserved4 @111 :Custom.CustomReserved4;
     customReserved5 @112 :Custom.CustomReserved5;
     customReserved6 @113 :Custom.CustomReserved6;

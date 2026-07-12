@@ -1,108 +1,102 @@
 #!/usr/bin/env python3
-"""Read-side helper for the Europilot gateway advisories.
+"""Read-side helper for the Europilot NDW matrix-sign advisories.
 
-Consumers (UI, longitudinal nudges, ...) use ``GatewayAdvisories`` to read the
-messages published by ``europilotd`` (see europilot/gateway.py) without having
-to know the wire details. It wraps SubMaster and exposes staleness-aware
-accessors that return ``None`` when data is missing or stale, so callers never
-act on outdated gateway data.
+Consumers (UI, longitudinal nudges) use ``GatewayAdvisories`` to read what
+``europilotd`` publishes without touching wire details. Accessors return
+``None`` when there is no valid, fresh match, so callers never act on stale
+gateway data.
 
-Everything here is ADVISORY / GUIDANCE ONLY. Per the architecture docs, map
-and sign data may raise attention or nudge, but must never filter perception
-or hard-limit control.
+Two things this deliberately does NOT do:
 
-The selection logic lives in module-level pure functions (readable and unit
-tested); the class is a thin SubMaster wrapper. Both operate on capnp readers
-via attribute access, so the pure functions work equally on test doubles.
+  * It does not collapse the mandatory (red-ringed, legally binding) speed and
+    the advisory (no red ring) speed into one number. Callers ask for the one
+    they mean. ``target_speed`` -- the lower of the two -- exists for a
+    controller that wants a single figure, but the distinction stays available.
+
+  * It does not filter or gate anything. Matrix-sign data is guidance: it may
+    raise attention or nudge, never override perception or hard-limit control.
+
+The selection logic lives in module-level pure functions (unit tested); the
+class is a thin SubMaster wrapper. Both read via attribute access, so the pure
+functions work equally on capnp readers and test doubles.
 
 Merge-safe: this file is new and does not modify upstream openpilot logic.
 """
 
-SERVICES = ["euNdwMatrixSigns", "euMapData", "euTrafficLightState", "euSpeedLimit"]
-
-_STOP_PHASES = ("red", "amber", "flashingAmber")
+SERVICES = ["euNdwMatrixSigns"]
 
 
-def resolve_speed_limit(speed_limit) -> int | None:
-    """Resolved advisory speed limit (km/h), or None if unknown.
-
-    ``speed_limit`` is a euSpeedLimit reader (``.valid``, ``.speedLimit``).
-    """
-    if speed_limit is None or not speed_limit.valid:
+def _gantry(signs, which: str):
+    """The named gantry reader, or None when it did not match."""
+    if signs is None or not signs.valid:
         return None
-    return speed_limit.speedLimit if speed_limit.speedLimit > 0 else None
+    g = getattr(signs, which)
+    return g if g.valid else None
 
 
-def relevant_matrix_speed(signs, ego_lane: int) -> int | None:
-    """Nearest matrix-sign speed limit (km/h) that applies to ``ego_lane``.
-
-    A sign applies when its ``laneIndex`` is the ego lane or -1 (all lanes).
-    Returns None when no applicable speed sign is present.
-    """
-    best = None
-    for s in signs:
-        if s.kind != "speedLimit" or s.speedLimit <= 0:
-            continue
-        if s.laneIndex not in (-1, ego_lane):
-            continue
-        if best is None or s.distance < best.distance:
-            best = s
-    return best.speedLimit if best is not None else None
+def governing_gantry(signs):
+    """The gantry we last passed -- the one governing us now."""
+    return _gantry(signs, "governing")
 
 
-def advised_speed_limit(speed_limit, signs, ego_lane: int) -> int | None:
-    """Single advisory speed limit for the driver.
-
-    A live matrix sign (dynamic, road-authority) overrides the resolved/OSM
-    value when present, since it reflects current road conditions.
-    """
-    matrix = relevant_matrix_speed(signs, ego_lane)
-    if matrix is not None:
-        return matrix
-    return resolve_speed_limit(speed_limit)
+def upcoming_gantry(signs):
+    """The next gantry ahead, so we can slow down early."""
+    return _gantry(signs, "upcoming")
 
 
-def nearest_stop_signal(intersections) -> dict | None:
-    """Nearest intersection ahead showing a stop phase (red/amber).
-
-    Returns ``{"intersectionId", "distance", "timeToChange"}`` for the closest
-    such intersection, or None. ``timeToChange`` is the soonest known phase
-    change among its stop movements, or -1 when unknown.
-    """
-    best = None
-    for i in intersections:
-        stop_movements = [m for m in i.movements if m.phase in _STOP_PHASES]
-        if not stop_movements:
-            continue
-        if best is None or i.distance < best["distance"]:
-            ttcs = [m.timeToChange for m in stop_movements if m.timeToChange >= 0]
-            best = {
-                "intersectionId": i.intersectionId,
-                "distance": i.distance,
-                "timeToChange": min(ttcs) if ttcs else -1.0,
-            }
-    return best
-
-
-def upcoming_speed_change(map_data) -> dict | None:
-    """Nearest upcoming OSM speed change ahead (guidance nudge only).
-
-    ``map_data`` is a euMapData reader. Returns ``{"speedLimit", "distance"}``
-    for the closest ``speedChange`` feature with a known limit, or None.
-    """
-    if map_data is None or not map_data.valid:
+def mandatory_speed(signs) -> int | None:
+    """Legally binding (red-ringed) speed from the governing gantry, km/h."""
+    g = governing_gantry(signs)
+    if g is None or g.mandatorySpeed <= 0:
         return None
-    best = None
-    for f in map_data.upcoming:
-        if f.kind != "speedChange" or f.speedLimit <= 0:
-            continue
-        if best is None or f.distance < best["distance"]:
-            best = {"speedLimit": f.speedLimit, "distance": f.distance}
-    return best
+    return g.mandatorySpeed
+
+
+def advisory_speed(signs) -> int | None:
+    """Advised (no red ring) speed from the governing gantry, km/h."""
+    g = governing_gantry(signs)
+    if g is None or g.advisorySpeed <= 0:
+        return None
+    return g.advisorySpeed
+
+
+def target_speed(signs) -> int | None:
+    """Lowest speed the governing gantry shows either way, km/h.
+
+    What a controller would aim for. Prefer mandatory_speed/advisory_speed when
+    the distinction matters (it usually does).
+    """
+    g = governing_gantry(signs)
+    if g is None or g.targetSpeed <= 0:
+        return None
+    return g.targetSpeed
+
+
+def upcoming_target_speed(signs) -> tuple[int, float] | None:
+    """``(km/h, meters)`` for the next gantry ahead, or None.
+
+    Lets a consumer start easing off before the gantry rather than at it.
+    """
+    g = upcoming_gantry(signs)
+    if g is None or g.targetSpeed <= 0:
+        return None
+    return (g.targetSpeed, g.distance)
+
+
+def closed_lanes(signs) -> list[int]:
+    """Lane indices closed or diverted at the governing gantry."""
+    g = governing_gantry(signs)
+    return list(g.closedLanes) if g is not None else []
+
+
+def is_flashing(signs) -> bool:
+    """Governing gantry is flashing (incident warning)."""
+    g = governing_gantry(signs)
+    return bool(g.flashing) if g is not None else False
 
 
 class GatewayAdvisories:
-    """Thin, staleness-aware SubMaster wrapper over the gateway messages."""
+    """Thin, validity-aware SubMaster wrapper over the gateway messages."""
 
     def __init__(self, sm=None):
         # sm may be injected (tests); otherwise built lazily so importing this
@@ -118,22 +112,26 @@ class GatewayAdvisories:
     def update(self) -> None:
         self._ensure().update(0)
 
-    def _reader(self, service: str):
-        """Return the reader for ``service`` only if it is currently valid."""
+    def _signs(self):
         sm = self._ensure()
-        if not sm.valid[service] or sm.recv_frame[service] == 0:
+        if not sm.valid["euNdwMatrixSigns"] or sm.recv_frame["euNdwMatrixSigns"] == 0:
             return None
-        return sm[service]
+        return sm["euNdwMatrixSigns"]
 
-    def speed_limit(self, ego_lane: int = 0) -> int | None:
-        sl = self._reader("euSpeedLimit")
-        ms = self._reader("euNdwMatrixSigns")
-        signs = ms.signs if ms is not None else []
-        return advised_speed_limit(sl, signs, ego_lane)
+    def mandatory_speed(self) -> int | None:
+        return mandatory_speed(self._signs())
 
-    def stop_signal(self) -> dict | None:
-        tl = self._reader("euTrafficLightState")
-        return nearest_stop_signal(tl.intersections) if tl is not None else None
+    def advisory_speed(self) -> int | None:
+        return advisory_speed(self._signs())
 
-    def next_speed_change(self) -> dict | None:
-        return upcoming_speed_change(self._reader("euMapData"))
+    def target_speed(self) -> int | None:
+        return target_speed(self._signs())
+
+    def upcoming_target_speed(self) -> tuple[int, float] | None:
+        return upcoming_target_speed(self._signs())
+
+    def closed_lanes(self) -> list[int]:
+        return closed_lanes(self._signs())
+
+    def is_flashing(self) -> bool:
+        return is_flashing(self._signs())
