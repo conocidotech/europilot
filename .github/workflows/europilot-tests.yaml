@@ -48,7 +48,7 @@ jobs:
         # modules that are not built here.
         # -o addopts: the repo-wide addopts pull in xdist and the openpilot ignore
         # list, neither of which is installed in this lightweight job.
-        run: pytest europilot/ndw gateway/ndw --noconftest -o addopts="-q --durations=5"
+        run: pytest europilot/ndw gateway --noconftest -o addopts="-q --durations=5"
 
       - name: Report result to Avanance
         # A green run flips tests_updated on the story, which is the gate to "done".
