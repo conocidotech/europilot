@@ -56,12 +56,11 @@ struct NdwMatrixSigns @0x81c2f05a394cf4af {
   }
 }
 
-# Slots for the remaining EU data sources (OSM map context, C-ITS SPaT/MAP
-# traffic lights, a fused speed limit). Deliberately still RESERVED: like NDW,
-# each of these is distributed as tiles and matched against the ego pose ON THE
-# DEVICE, so their bus schema falls out of the matcher -- and there is no
-# gateway endpoint or matcher for them yet. Define each one together with its
-# pipeline rather than guessing the shape up front.
+# Slots for the two remaining tile-distributed EU sources (OSM map context and
+# C-ITS SPaT/MAP traffic lights). Deliberately still RESERVED: like NDW, each is
+# distributed as tiles and matched against the ego pose ON THE DEVICE, so its
+# bus schema falls out of the matcher -- and there is no gateway endpoint or
+# matcher for them yet. Define each one together with its pipeline.
 
 struct CustomReserved1 @0xaedffd8f31e7b55d {
 }
@@ -69,7 +68,20 @@ struct CustomReserved1 @0xaedffd8f31e7b55d {
 struct CustomReserved2 @0xf35cc4560bbf6ec2 {
 }
 
-struct CustomReserved3 @0xda96579883444c35 {
+struct SpeedLimit @0xda96579883444c35 {
+  # Advisory speed limit read from the car's own Road Sign Assist (RSA) front
+  # camera, decoded from the Toyota/Lexus FCM camera-CAN messages by
+  # europilot/rsa.py. Advisory only -- surfaced to the driver, never used to
+  # hard-limit control.
+  fetchMonoTime @0 :UInt64;   # monotonic ns when this was published
+  valid @1 :Bool;
+  speedLimit @2 :Int16;       # km/h; -1 unknown
+  source @3 :Source;
+
+  enum Source {
+    none @0;
+    rsaCamera @1;             # Toyota/Lexus Road Sign Assist front camera
+  }
 }
 
 struct CustomReserved4 @0x80ae746ee2596b11 {
