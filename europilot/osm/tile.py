@@ -9,7 +9,7 @@ ordinary units.
 
 from pathlib import Path
 
-from europilot.osm.types import Road
+from europilot.osm.types import Camera, Road
 
 COORD_SCALE = 10_000_000.0
 _SCHEMA_PATH = Path(__file__).resolve().parents[2] / "gateway" / "osm" / "maptile.capnp"
@@ -29,6 +29,15 @@ def _none_if_zero(value: int) -> int | None:
     return value or None
 
 
+def _camera(c) -> Camera:
+    return Camera(
+        lat=c.point.lat / COORD_SCALE,
+        lon=c.point.lon / COORD_SCALE,
+        maxspeed=_none_if_zero(c.maxspeed),
+        kind=str(c.kind),
+    )
+
+
 def _road(r) -> Road:
     return Road(
         id=r.id,
@@ -46,6 +55,7 @@ def _road(r) -> Road:
         cyclestreet=r.cyclestreet,
         residential_score=r.residentialScore,
         comfort_speed=_none_if_zero(r.comfortSpeed),
+        cameras=tuple(_camera(c) for c in r.cameras),
     )
 
 
