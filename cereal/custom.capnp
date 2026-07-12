@@ -69,18 +69,21 @@ struct CustomReserved2 @0xf35cc4560bbf6ec2 {
 }
 
 struct SpeedLimit @0xda96579883444c35 {
-  # Advisory speed limit read from the car's own Road Sign Assist (RSA) front
-  # camera, decoded from the Toyota/Lexus FCM camera-CAN messages by
-  # europilot/rsa.py. Advisory only -- surfaced to the driver, never used to
-  # hard-limit control.
+  # Resolved advisory speed limit, fused from every available source by
+  # europilot/speed_limit.py. `source` says which source the value came from.
+  # Advisory only -- surfaced to the driver, never used to hard-limit control.
   fetchMonoTime @0 :UInt64;   # monotonic ns when this was published
   valid @1 :Bool;
   speedLimit @2 :Int16;       # km/h; -1 unknown
   source @3 :Source;
 
+  # Ordered roughly by authority/currency. Append new sources; never renumber.
   enum Source {
     none @0;
     rsaCamera @1;             # Toyota/Lexus Road Sign Assist front camera
+    ndwMandatory @2;          # NDW matrix sign, red-ringed (legally binding)
+    ndwAdvisory @3;           # NDW matrix sign, no red ring (advice)
+    osm @4;                   # OSM static map limit (not wired yet -- EUROPILOT-35)
   }
 }
 
