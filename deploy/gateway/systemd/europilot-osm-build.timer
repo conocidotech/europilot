@@ -1,0 +1,13 @@
+[Unit]
+Description=Rebuild Europilot OSM tiles daily
+Documentation=https://app.europilot.eu
+
+[Timer]
+# Geofabrik publishes a fresh Netherlands extract once a day; rebuild after it.
+OnCalendar=*-*-* 04:30:00
+# Catch up if the host was off at 04:30.
+Persistent=true
+RandomizedDelaySec=1800
+
+[Install]
+WantedBy=timers.target

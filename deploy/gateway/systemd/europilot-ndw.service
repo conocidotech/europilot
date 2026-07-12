@@ -1,0 +1,26 @@
+[Unit]
+Description=Europilot NDW matrix-sign gateway
+Documentation=https://app.europilot.eu
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=europilot
+Group=europilot
+WorkingDirectory=/opt/europilot
+EnvironmentFile=/etc/europilot/gateway.env
+# Serves signed /ndw/region + /health on loopback; Caddy fronts it with TLS.
+ExecStart=/opt/europilot/.venv-gateway/bin/python -m gateway.ndw.service \
+    --shapefile ${EUROPILOT_NDW_SHAPEFILE} --host 127.0.0.1 --port 8080
+Restart=on-failure
+RestartSec=5
+# Hardening: no privileges, read-only system, data dir the only writable path.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/europilot
+
+[Install]
+WantedBy=multi-user.target

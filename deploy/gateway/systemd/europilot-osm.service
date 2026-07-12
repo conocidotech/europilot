@@ -1,0 +1,27 @@
+[Unit]
+Description=Europilot OSM signed-tile gateway
+Documentation=https://app.europilot.eu
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=europilot
+Group=europilot
+WorkingDirectory=/opt/europilot
+EnvironmentFile=/etc/europilot/gateway.env
+# Serves signed /osm/manifest + /osm/tile on loopback; Caddy fronts it with TLS.
+# Reloads the tile set in place on SIGHUP -- the build unit sends one on success.
+ExecStart=/opt/europilot/.venv-gateway/bin/python deploy/gateway/osm_pipeline.py serve \
+    --dir ${EUROPILOT_OSM_TILE_DIR} --host 127.0.0.1 --port 8081
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/europilot
+
+[Install]
+WantedBy=multi-user.target
