@@ -21,6 +21,7 @@ dependencies = [
   "cffi",
   "scons",
   "pycapnp==2.1.0",  # 2.2 introduces a memory leak due to cyclic references
+  "pynacl",       # europilot: Ed25519 signing (feature flags, OSM tile + NDW manifests)
   "Cython",
   "setuptools",
   "numpy >=2.0",
