@@ -25,11 +25,12 @@ from europilot.osm.types import Advisory
 from gateway.osm.grid import group_of, tile_of
 from gateway.osm.manifest import content_hash, manifest_etag, tiles_to_fetch, verify_manifest
 
-# The gateway's tile-signing public key. PLACEHOLDER (all-zero) -- a real
-# deployment pins the gateway's real Ed25519 public half here, separate from
-# flags.py's key. Until then verify_manifest rejects everything, so the device
-# simply gets no OSM tiles rather than trusting an unsigned feed.
-OSM_TILE_PUBKEY_B64 = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+# The gateway's tile-signing public key (Ed25519), separate from flags.py's key.
+# Its private half lives only on the gateway as EUROPILOT_OSM_SIGNING_KEY; the
+# device verifies every manifest against this pinned public half and trusts no
+# unsigned feed. Rotating it here strands any device still pinned to the old key,
+# so change it only in a deliberate key rotation.
+OSM_TILE_PUBKEY_B64 = "ArIHIJnQDJwuxgBTv1gLpLpYn53RQNPWvF6pBvQ09Gw="
 
 REFRESH_INTERVAL_S = 300.0
 REQUEST_TIMEOUT_S = 10.0
