@@ -10,8 +10,58 @@ $Cxx.namespace("cereal");
 # DO rename the structs
 # DON'T change the identifier (e.g. @0x81c2f05a394cf4af)
 
-struct CustomReserved0 @0x81c2f05a394cf4af {
+# ---------------------------------------------------------------------------
+# Europilot fork events.
+#
+# Each struct below was a reserved empty struct in upstream cereal
+# (CustomReserved0..3). Following upstream convention we rename the struct but
+# keep the @0x... identifier and the log.capnp Event-union slot it maps to.
+#
+# Everything here is delivered to the device by the app.europilot.eu gateway
+# and is ADVISORY / GUIDANCE ONLY. See the architecture docs:
+#   - "OSM is een nudge, nooit een filter"      (map data raises priors only)
+#   - "Verkeerslichtdata (C-ITS SPaT/MAP)"      (advisory, never authoritative)
+# ---------------------------------------------------------------------------
+
+struct NdwMatrixSigns @0x81c2f05a394cf4af {
+  # Result of matching the ego pose against an NDW matrix-sign region snapshot.
+  #
+  # Matching happens ON THE DEVICE (europilot/ndw/match.py): distance to a
+  # gantry and which lane governs us depend on the precise pose, which changes
+  # far faster than the gateway poll. The gateway only serves tile snapshots of
+  # sign geometry + live aspects; europilotd matches and publishes the result.
+  fetchMonoTime @0 :UInt64;    # monotonic ns when this was published
+  valid @1 :Bool;
+  snapshotAge @2 :Float32;     # seconds since the gateway's last good NDW refresh
+
+  governing @3 :Gantry;        # the gantry we last passed: governs us now
+  upcoming @4 :Gantry;         # the next gantry ahead: lets us slow down early
+
+  struct Gantry {
+    valid @0 :Bool;            # false when no gantry matched
+    distance @1 :Float32;      # meters along the heading axis; negative = passed
+
+    # A Dutch matrix sign shows a speed either with a red ring (legally binding)
+    # or without one (advice). Keeping them apart is legally meaningful, so we
+    # never collapse them into a single number.
+    mandatorySpeed @2 :Int16;  # km/h, red-ringed: binding;  -1 = none shown
+    advisorySpeed @3 :Int16;   # km/h, no red ring: advice;   -1 = none shown
+    targetSpeed @4 :Int16;     # lowest of the two: what a controller aims for; -1 = none
+
+    flashing @5 :Bool;
+    closedLanes @6 :List(Int8);  # lane indices closed or diverted at this gantry
+
+    road @7 :Text;             # e.g. "A2"
+    carriageway @8 :Text;
+  }
 }
+
+# Slots for the remaining EU data sources (OSM map context, C-ITS SPaT/MAP
+# traffic lights, a fused speed limit). Deliberately still RESERVED: like NDW,
+# each of these is distributed as tiles and matched against the ego pose ON THE
+# DEVICE, so their bus schema falls out of the matcher -- and there is no
+# gateway endpoint or matcher for them yet. Define each one together with its
+# pipeline rather than guessing the shape up front.
 
 struct CustomReserved1 @0xaedffd8f31e7b55d {
 }

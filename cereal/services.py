@@ -93,6 +93,10 @@ _services: dict[str, tuple] = {
   "livestreamRoadEncodeData": (False, 20., None, QueueSize.MEDIUM),
   "livestreamDriverEncodeData": (False, 20., None, QueueSize.MEDIUM),
   "customReservedRawData0": (True, 0.),
+
+  # Europilot: matched NDW matrix-sign state (see europilot/gateway.py).
+  # Advisory only. Name matches the eu-prefixed Event union field.
+  "euNdwMatrixSigns": (True, 4.),
 }
 SERVICE_LIST = {name: Service(*vals) for
                 idx, (name, vals) in enumerate(_services.items())}
