@@ -1,9 +1,9 @@
 """Read ways, tagged nodes and relations from an .osm XML extract.
 
-Production ingest is osmium over the canonical .osm.pbf (tags-filter -> extract
---bbox -> add-locations-to-ways, then daily apply-changes); that front-end is a
-later slice and needs the osmium toolchain. This module reads the equivalent
-.osm XML, which is the same data model, so the derivation core and its tests
+Production ingest is osmium over the canonical .osm.pbf (tags-filter -> export
+to .osm, rolled forward with daily apply-changes); that front-end lives in
+ingest.py and needs the osmium toolchain. This module reads the .osm XML that
+front-end emits -- the same data model -- so the derivation core and its tests
 don't depend on the PBF toolchain.
 
 The spatial joins need more than slice 1 did: node tags (traffic_calming,
