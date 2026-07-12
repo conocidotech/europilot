@@ -42,14 +42,14 @@ jobs:
         # europilot/test_flags.py has six pre-existing violations (banned unittest
         # import, unused imports), so europilot/ as a whole does not lint clean yet.
         # Widen this once that file is cleaned up.
-        run: ruff check europilot/ndw/ gateway/
+        run: ruff check europilot/ndw/ europilot/osm/ gateway/
 
       - name: Test
         # --noconftest: the repo-root conftest.py imports compiled openpilot
         # modules that are not built here.
         # -o addopts: the repo-wide addopts pull in xdist and the openpilot ignore
         # list, neither of which is installed in this lightweight job.
-        run: pytest europilot/ndw gateway --noconftest -o addopts="-q --durations=5"
+        run: pytest europilot/ndw europilot/osm gateway --noconftest -o addopts="-q --durations=5"
 
       - name: Report result to Avanance
         # A green run flips tests_updated on the story, which is the gate to "done".
