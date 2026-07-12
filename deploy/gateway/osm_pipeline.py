@@ -73,8 +73,12 @@ def _parse_tile_name(name: str) -> tuple[int, int]:
     return int(lat_s), int(lon_s)
 
 
-def _derive_by_cell(source_pbf: Path, work_dir: Path, bbox: tuple[float, float, float, float]) -> dict:
-    """Filter the source PBF, then derive 0.25 deg tiles via a two-stage cut.
+def _derive_by_cell(source_pbf: Path, work_dir: Path,
+                    bbox: tuple[float, float, float, float]):
+    """Yield ((tile_lat, tile_lon), records) per non-empty 0.25 deg tile.
+
+    Derives via a two-stage cut and yields each tile as it is built, so the
+    caller can stream tiles to disk instead of holding the whole country in RAM.
 
     A single pass over a national extract blows expat's 2 GB DOM limit, and
     osmium's extractor needs >1 GB and OOMs a small box. Cutting every 0.25 deg
@@ -112,7 +116,6 @@ def _derive_by_cell(source_pbf: Path, work_dir: Path, bbox: tuple[float, float, 
               for clat in range(int(south // COARSE_DEG), int(north // COARSE_DEG) + 1)
               for clon in range(int(west // COARSE_DEG), int(east // COARSE_DEG) + 1)]
 
-    tiles: dict[tuple[int, int], list[dict]] = {}
     for idx, (clat, clon) in enumerate(coarse):
         region = coarse_dir / f"r_{clat}_{clon}.osm.pbf"
         _osmconvert(filtered,
@@ -129,41 +132,46 @@ def _derive_by_cell(source_pbf: Path, work_dir: Path, bbox: tuple[float, float, 
                 records = ingest.build_tiles_from_osm(cell_osm).get((tl, to))
                 cell_osm.unlink(missing_ok=True)
                 if records:
-                    tiles[(tl, to)] = records
+                    yield (tl, to), records
         region.unlink(missing_ok=True)
-        print(f"  region {idx + 1}/{len(coarse)} done, {len(tiles)} non-empty tiles")
-    return tiles
+        print(f"  region {idx + 1}/{len(coarse)} done", flush=True)
 
 
 def build(pbf: Path, out: Path, work_dir: Path,
           bbox: tuple[float, float, float, float] = NL_BBOX) -> int:
-    """Filter+derive a PBF into a signed-serving-ready tile directory (atomic)."""
+    """Filter+derive a PBF into a signed-serving-ready tile directory (atomic).
+
+    Streams tiles to disk one cell at a time -- a national build holds tens of
+    thousands of records, and a dense cell's transient DOM is ~1 GB, so
+    accumulating everything before writing OOMs the box. Peak memory is now one
+    cell at a time.
+    """
     ingest.require_osmium()
     work_dir.mkdir(parents=True, exist_ok=True)
 
     generated_at = int(pbf.stat().st_mtime)
-    tiles = _derive_by_cell(pbf, work_dir, bbox)
-
     staging = out.with_name(out.name + ".tmp")
     if staging.exists():
         _rmtree(staging)
     tiles_dir = staging / TILES_SUBDIR
     tiles_dir.mkdir(parents=True)
 
-    for (lat, lon), records in tiles.items():
+    count = 0
+    for (lat, lon), records in _derive_by_cell(pbf, work_dir, bbox):
         payload = wire.serialize_tile(lat, lon, records, generated_at_unix_s=generated_at)
         _tile_path(tiles_dir, lat, lon).write_bytes(payload)
+        count += 1
 
     (staging / META_NAME).write_text(json.dumps({
         "generated_at": generated_at,
-        "count": len(tiles),
+        "count": count,
         "source_pbf": str(pbf),
     }))
 
     if out.exists():
         _rmtree(out)
     staging.replace(out)
-    print(f"built {len(tiles)} tiles into {out} (generated_at={generated_at})")
+    print(f"built {count} tiles into {out} (generated_at={generated_at})", flush=True)
     return 0
 
 
