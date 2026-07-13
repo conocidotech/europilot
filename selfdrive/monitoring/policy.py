@@ -36,6 +36,13 @@ class DRIVER_MONITOR_SETTINGS:
     self._TIMEOUT_RECOVERY_FACTOR_MAX = 5.
     self._TIMEOUT_RECOVERY_FACTOR_MIN = 1.25
 
+    # Europilot (EUROPILOT-60): opt-in relaxation of the vision attention
+    # timeouts when the driving model is highly confident. Bounded and applied
+    # pre-orange only; see DriverMonitoring._set_confidence_relax.
+    self._CONF_RELAX_LO = 0.6           # confidence at/below this -> no relaxation
+    self._CONF_RELAX_HI = 0.95          # confidence at/above this -> full relaxation
+    self._CONF_RELAX_MAX_FACTOR = 1.5   # cap: vision timeouts at most 1.5x longer
+
     self._MAX_TERMINAL_ALERTS = 3  # not allowed to engage after 3 terminal alerts
     self._MAX_TERMINAL_DURATION = int(30 / DT_DMON)  # not allowed to engage after 30s of terminal alerts
 
@@ -155,6 +162,17 @@ class DriverMonitoring:
     self.dcam_reset_cnt = 0
     self.too_distracted = Params().get_bool("DriverTooDistracted")
 
+    # Europilot (EUROPILOT-60): vision-timeout stretch from model confidence
+    # (1.0 = stock). Opt-in and read once; toggling needs a restart like the
+    # other europilot flags. Default off means exactly stock behaviour. Read
+    # defensively so a build predating the param key can't crash DM -- an
+    # unknown key means the feature isn't shipped, i.e. stock.
+    self.vision_timeout_factor = 1.0
+    try:
+      self._conf_relax_enabled = Params().get_bool("EuropilotConfidenceDM")
+    except Exception:
+      self._conf_relax_enabled = False
+
     self._reset_awareness()
     self._set_policy(MonitoringPolicy.vision)
 
@@ -181,7 +199,10 @@ class DriverMonitoring:
 
       self.threshold_alert_1 = 1. - self.settings._VISION_POLICY_ALERT_1_TIMEOUT / self.settings._VISION_POLICY_ALERT_3_TIMEOUT
       self.threshold_alert_2 = 1. - self.settings._VISION_POLICY_ALERT_2_TIMEOUT / self.settings._VISION_POLICY_ALERT_3_TIMEOUT
-      self.step_change = DT_DMON / self.settings._VISION_POLICY_ALERT_3_TIMEOUT
+      # europilot: vision_timeout_factor stretches the decay (>=1.0) when the
+      # model is confident; 1.0 = stock. Thresholds above are ratios, so only
+      # the decay rate changes -- every vision timing lengthens uniformly.
+      self.step_change = DT_DMON / (self.settings._VISION_POLICY_ALERT_3_TIMEOUT * self.vision_timeout_factor)
       self.active_policy = MonitoringPolicy.vision
     else:
       if self.active_policy == MonitoringPolicy.vision:
@@ -203,6 +224,36 @@ class DriverMonitoring:
     self.pose.cfactor_yaw = np.interp(bp_normal, [0, 0.5],
                                            [self.settings._POSE_YAW_THRESHOLD_SLACK,
                                             self.settings._POSE_YAW_THRESHOLD_STRICT]) / self.settings._POSE_YAW_THRESHOLD
+
+  def _model_confidence(self, sm):
+    """Conservative driving confidence in [0,1] from the model's disengage /
+    steer-override predictions -- the same signal the onroad confidence ball
+    uses. Worst-case (max prob) over the horizon; 0.0 if unavailable."""
+    try:
+      pred = sm['modelV2'].meta.disengagePredictions
+      brake = max(pred.brakeDisengageProbs or [1.0])
+      steer = max(pred.steerOverrideProbs or [1.0])
+      return (1.0 - brake) * (1.0 - steer)
+    except Exception:
+      return 0.0
+
+  def _set_confidence_relax(self, confidence):
+    """Stretch the vision attention timeouts when the model is confident.
+
+    confidence in [0,1] (1 = model expects no disengage/override). With the
+    opt-in flag off, or confidence low/unavailable, the factor is 1.0 and
+    behaviour is exactly stock. The stretch is capped (_CONF_RELAX_MAX_FACTOR)
+    and only lengthens the time before an attention nag -- it never disables
+    monitoring, and _set_policy ignores it once the orange (alert-2) stage is
+    reached, so the terminal escalation is unchanged. EUROPILOT-60.
+    """
+    if not self._conf_relax_enabled or not np.isfinite(confidence):
+      self.vision_timeout_factor = 1.0
+      return
+    c = min(max(confidence, 0.0), 1.0)
+    self.vision_timeout_factor = float(np.interp(
+      c, [self.settings._CONF_RELAX_LO, self.settings._CONF_RELAX_HI],
+      [1.0, self.settings._CONF_RELAX_MAX_FACTOR]))
 
   def _get_distracted_types(self):
     self.distracted_types = defaultdict(bool)
@@ -414,6 +465,10 @@ class DriverMonitoring:
       brake_disengage_prob=brake_disengage_prob,
       car_speed=car_speed,
     )
+
+    # europilot (EUROPILOT-60): relax the vision attention timeouts when the
+    # model is confident (opt-in; demo runs stock). Fails safe to stock.
+    self._set_confidence_relax(0.0 if demo else self._model_confidence(sm))
 
     # Parse data from dmonitoringmodeld
     self._update_states(
