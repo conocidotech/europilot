@@ -75,6 +75,9 @@ procs = [
   PythonProcess("europilot_speedlimitd", "europilot.speed_limit", only_onroad, restart_if_crash=True),
   # Europilot: matched OSM road advisory from the synced signed tiles
   PythonProcess("europilot_osmd", "europilot.osm.daemon", only_onroad, restart_if_crash=True),
+  # Europilot: heartbeat so the car shows up (online) on app.europilot.eu/devices.
+  # always_run -- a parked car should still be visible; telemetry-only, fails safe.
+  PythonProcess("europilot_heartbeatd", "europilot.heartbeat", always_run, restart_if_crash=True),
 
   NativeProcess("loggerd", "system/loggerd", ["./loggerd"], logging),
   NativeProcess("encoderd", "system/loggerd", ["./encoderd"], only_onroad),
