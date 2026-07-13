@@ -12,3 +12,10 @@
 
 selfdrive/car/tests/test_models_segs.txt filter=lfs diff=lfs merge=lfs -text
 system/hardware/tici/updater filter=lfs diff=lfs merge=lfs -text
+
+# europilot branding assets: kept as plain git blobs (tiny, <10 KB each) so the
+# device does not need an LFS fetch for them. openpilot's .lfsconfig points LFS
+# at comma's GitLab, where these objects do not exist, so LFS-tracking them would
+# leave the boot logo / wordmark as broken pointer files after an on-device flash.
+selfdrive/assets/images/spinner_europilot.png !filter !diff !merge text=auto
+selfdrive/assets/images/europilot_wordmark.png !filter !diff !merge text=auto
