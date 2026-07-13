@@ -30,7 +30,7 @@ from gateway.osm.manifest import content_hash, manifest_etag, tiles_to_fetch, ve
 # device verifies every manifest against this pinned public half and trusts no
 # unsigned feed. Rotating it here strands any device still pinned to the old key,
 # so change it only in a deliberate key rotation.
-OSM_TILE_PUBKEY_B64 = "ArIHIJnQDJwuxgBTv1gLpLpYn53RQNPWvF6pBvQ09Gw="
+OSM_TILE_PUBKEY_B64 = "Pw0CvtpvxfI3G6skI3LMtILJpfvZ/AyH19Vr4HvOUmU="
 
 REFRESH_INTERVAL_S = 300.0
 REQUEST_TIMEOUT_S = 10.0
