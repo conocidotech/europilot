@@ -25,12 +25,29 @@ from europilot.osm.client import gateway_host
 INTERVAL_S = 60.0       # server marks a device offline after 300s, so beat well under that
 TIMEOUT_S = 10.0
 DEVICE_NAME = "Europilot"
+NAME_FILE = "/data/europilot_device_name"   # optional: one line overrides the display name
 
 
 def _as_str(value) -> str:
     if isinstance(value, bytes):
         return value.decode("utf-8", "replace")
     return value or ""
+
+
+def _device_name() -> str:
+    """Display name: an optional /data file, else the default.
+
+    A plain file rather than a Param because openpilot's Params rejects any key
+    not in its registry, and adding a key there would not be merge-safe.
+    """
+    try:
+        with open(NAME_FILE) as f:
+            name = f.read().strip()
+            if name:
+                return name
+    except OSError:
+        pass
+    return DEVICE_NAME
 
 
 def _software_version(params: Params) -> str:
@@ -64,7 +81,7 @@ def build_payload(params: Params) -> dict | None:
         return None
     return {
         "dongle_id": dongle_id,
-        "device_name": _as_str(params.get("EuropilotDeviceName")) or DEVICE_NAME,
+        "device_name": _device_name(),
         "car_model": _car_model(params),
         "software_version": _software_version(params),
     }

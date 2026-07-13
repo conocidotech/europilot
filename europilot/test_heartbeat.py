@@ -27,10 +27,15 @@ def test_decodes_bytes_dongle():
     assert p["dongle_id"] == "057af248360e1706"
 
 
-def test_default_and_override_name():
+def test_default_name_when_no_file():
     assert heartbeat.build_payload(FakeParams({"DongleId": "x"}))["device_name"] == heartbeat.DEVICE_NAME
-    p = heartbeat.build_payload(FakeParams({"DongleId": "x", "EuropilotDeviceName": "Lexus NX"}))
-    assert p["device_name"] == "Lexus NX"
+
+
+def test_name_file_override(tmp_path, monkeypatch):
+    f = tmp_path / "name"
+    f.write_text("Lexus NX\n")
+    monkeypatch.setattr(heartbeat, "NAME_FILE", str(f))
+    assert heartbeat.build_payload(FakeParams({"DongleId": "x"}))["device_name"] == "Lexus NX"
 
 
 def test_payload_shape():
