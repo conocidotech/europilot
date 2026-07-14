@@ -1,0 +1,10 @@
+# Secrets and runtime state are provisioned on the host, never committed.
+keys/                 # admin.token, private.key, azure_sso.json (Ed25519 signing seed etc.)
+*.db                  # flags.db — holds users (emails, password hashes) + device data
+*.db-wal
+*.db-shm
+venv/
+.venv/
+__pycache__/
+*.pyc
+main.py.bak-*         # in-place deploy backups

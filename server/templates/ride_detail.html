@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}Rit {{ ride.id }} — Europilot{% endblock %}
+{% block extra_head %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+#map{height:400px;border-radius:var(--radius);border:1px solid var(--border);margin-bottom:16px}
+.ride-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:20px}
+.ride-stat{text-align:center;padding:16px}
+.ride-stat .value{font-size:24px;font-weight:700}
+.ride-stat .label{font-size:12px;color:var(--text2);margin-top:4px}
+</style>
+{% endblock %}
+{% block content %}
+<div style="display:flex;align-items:center;gap:12px;margin-bottom:20px">
+  <a href="/rides" style="color:var(--text2);font-size:14px">&larr; Terug naar ritten</a>
+</div>
+<h1>Rit #{{ ride.id }} — {{ ride.date_fmt }}</h1>
+
+<div class="ride-stats">
+  <div class="card ride-stat">
+    <div class="value">{{ "%.1f"|format(ride.distance_km or 0) }} km</div>
+    <div class="label">Afstand</div>
+  </div>
+  <div class="card ride-stat">
+    <div class="value">{{ ride.duration_fmt }}</div>
+    <div class="label">Duur</div>
+  </div>
+  <div class="card ride-stat">
+    <div class="value" style="color:var(--green)">{{ "%.0f"|format(ride.engaged_pct or 0) }}%</div>
+    <div class="label">Engaged</div>
+  </div>
+  <div class="card ride-stat">
+    <div class="value">{{ "%.0f"|format(ride.avg_speed_kmh or 0) }}</div>
+    <div class="label">Gem. km/h</div>
+  </div>
+  <div class="card ride-stat">
+    <div class="value" style="color:var(--orange)">{{ "%.0f"|format(ride.max_speed_kmh or 0) }}</div>
+    <div class="label">Max km/h</div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Route</h2>
+  <div id="map"></div>
+  {% if not ride.route %}
+  <p style="color:var(--text2);text-align:center;padding:20px">Geen routegegevens beschikbaar voor deze rit.</p>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>Details</h2>
+  <table>
+    <tr><td style="color:var(--text2);width:160px">Device</td><td>{{ ride.device_name or ride.dongle_id }}</td></tr>
+    <tr><td style="color:var(--text2)">Auto</td><td>{{ ride.car_model or "—" }}</td></tr>
+    <tr><td style="color:var(--text2)">Dongle ID</td><td class="flag-key">{{ ride.dongle_id }}</td></tr>
+    {% if ride.start_lat %}
+    <tr><td style="color:var(--text2)">Start</td><td>{{ "%.4f"|format(ride.start_lat) }}, {{ "%.4f"|format(ride.start_lng) }}</td></tr>
+    {% endif %}
+    {% if ride.end_lat %}
+    <tr><td style="color:var(--text2)">Einde</td><td>{{ "%.4f"|format(ride.end_lat) }}, {{ "%.4f"|format(ride.end_lng) }}</td></tr>
+    {% endif %}
+  </table>
+</div>
+
+<script>
+(function() {
+  var route = {{ ride.route | tojson }};
+  if (!route || route.length === 0) return;
+
+  var map = L.map('map');
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; OpenStreetMap contributors',
+    maxZoom: 18,
+  }).addTo(map);
+
+  var latlngs = route.map(function(p) { return [p[0], p[1]]; });
+  var polyline = L.polyline(latlngs, {color: '#4f8cff', weight: 4, opacity: 0.9}).addTo(map);
+  map.fitBounds(polyline.getBounds(), {padding: [30, 30]});
+
+  L.circleMarker(latlngs[0], {radius: 8, color: '#34d399', fillColor: '#34d399', fillOpacity: 1})
+    .bindPopup('Start').addTo(map);
+  L.circleMarker(latlngs[latlngs.length - 1], {radius: 8, color: '#f87171', fillColor: '#f87171', fillOpacity: 1})
+    .bindPopup('Einde').addTo(map);
+})();
+</script>
+{% endblock %}

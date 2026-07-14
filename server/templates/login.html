@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Login — Europilot{% endblock %}
+{% block content %}
+<div style="display:flex;align-items:center;justify-content:center;min-height:80vh">
+  <div class="card" style="width:100%;max-width:400px;text-align:center">
+    <svg viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" style="width:64px;height:64px;margin:0 auto 16px">
+      <path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>
+    </svg>
+    <h1 style="margin-bottom:8px;font-size:28px">Europilot</h1>
+    <p style="color:var(--text2);margin-bottom:24px">Log in om je devices te beheren</p>
+    {% if error %}
+    <div class="flash flash-error" style="margin-bottom:16px">{{ error }}</div>
+    {% endif %}
+    {% if sso_enabled %}
+    <a href="/auth/microsoft/redirect" class="btn" style="width:100%;justify-content:center;margin-bottom:20px;background:#2f2f2f;border:1px solid #555;color:#fff;text-decoration:none;display:inline-flex;align-items:center;gap:10px;padding:10px 16px;border-radius:8px;font-size:15px;font-weight:500;transition:background .2s">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 21 21" style="width:20px;height:20px;flex-shrink:0">
+        <rect x="1" y="1" width="9" height="9" fill="#f25022"/>
+        <rect x="11" y="1" width="9" height="9" fill="#7fba00"/>
+        <rect x="1" y="11" width="9" height="9" fill="#00a4ef"/>
+        <rect x="11" y="11" width="9" height="9" fill="#ffb900"/>
+      </svg>
+      Inloggen met Microsoft 365
+    </a>
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px">
+      <div style="flex:1;height:1px;background:var(--border)"></div>
+      <span style="color:var(--text2);font-size:13px">of</span>
+      <div style="flex:1;height:1px;background:var(--border)"></div>
+    </div>
+    {% endif %}
+    <form method="post" action="/login">
+      <div class="form-group" style="text-align:left">
+        <label for="username">Gebruikersnaam</label>
+        <input type="text" id="username" name="username" placeholder="admin" required autofocus>
+      </div>
+      <div class="form-group" style="text-align:left">
+        <label for="password">Wachtwoord</label>
+        <input type="password" id="password" name="password" placeholder="Wachtwoord" required>
+      </div>
+      <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;margin-top:8px">Inloggen</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

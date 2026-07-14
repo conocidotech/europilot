@@ -1,0 +1,179 @@
+{% extends "base.html" %}
+{% block title %}Live — {{ device_name }} — Europilot{% endblock %}
+{% block content %}
+<div class="card-header" style="margin-bottom:16px">
+  <div>
+    <h1 style="margin:0">Live: {{ device_name }}</h1>
+    <p style="color:var(--text2);margin:4px 0 0;font-size:14px">
+      {{ car_model or "—" }} · <span class="flag-key">{{ dongle_id }}</span>
+    </p>
+  </div>
+  <a href="/devices" class="btn btn-outline btn-sm">&larr; Devices</a>
+</div>
+
+<div class="card">
+  <div class="card-header" style="margin-bottom:12px">
+    <h2 style="margin:0">Bird's-eye</h2>
+    <span id="status" class="badge badge-red"><span class="dot dot-red"></span> Verbinden…</span>
+  </div>
+
+  <div style="display:flex;gap:24px;flex-wrap:wrap;align-items:flex-start">
+    <canvas id="radar" width="520" height="560"
+            style="background:var(--bg);border-radius:10px;max-width:100%;flex:0 0 auto"></canvas>
+
+    <div style="flex:1 1 220px;min-width:200px">
+      <div class="stats" style="margin:0 0 16px">
+        <div class="stat"><div class="stat-value" id="speed">—</div><div class="stat-label">km/u</div></div>
+        <div class="stat"><div class="stat-value" id="heading">—</div><div class="stat-label">koers</div></div>
+        <div class="stat"><div class="stat-value" id="objcount">—</div><div class="stat-label">objecten</div></div>
+      </div>
+      <p style="color:var(--text2);font-size:13px;line-height:1.5">
+        De comma detecteert alleen <strong>naar voren</strong> (frontradar + camera);
+        de zij- en achterkant zijn <strong>blind</strong> en gearceerd.
+      </p>
+      <ul style="color:var(--text2);font-size:13px;line-height:1.6;padding-left:18px;margin:8px 0">
+        <li><span style="color:var(--green)">&#x25AC; Autootje</span> = door het model
+            bevestigd <strong>voertuig</strong> (lead).</li>
+        <li>&#x25C6; Grijze blip = ruwe <strong>radarreflectie</strong>. De radar ziet
+            álles wat metaal reflecteert — óók vangrails, borden of bruggen — dus niet
+            per se een auto.</li>
+      </ul>
+      <p style="color:var(--text2);font-size:13px" id="coords">—</p>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  const dongle = {{ dongle_id | tojson }};
+  const cv = document.getElementById("radar");
+  const ctx = cv.getContext("2d");
+  const W = cv.width, H = cv.height;
+  const EGO_Y = H - 120;          // ego sits low so forward has room
+  const RANGE_M = 120;            // top of canvas = this far ahead
+  const SCALE = (EGO_Y) / RANGE_M;  // px per metre (forward span ego->top)
+
+  function css(v) { return getComputedStyle(document.documentElement).getPropertyValue(v).trim() || v; }
+
+  // A little top-down car, pointing up (forward). body = paint, roof = windshield.
+  function drawCar(px, py, w, h, body, roof) {
+    const r = Math.min(w, h) * 0.28;
+    ctx.save();
+    ctx.translate(px, py);
+    // body (rounded rect centred on px,py)
+    ctx.beginPath();
+    ctx.moveTo(-w/2 + r, -h/2);
+    ctx.arcTo(w/2, -h/2, w/2, -h/2 + r, r);
+    ctx.arcTo(w/2, h/2, w/2 - r, h/2, r);
+    ctx.arcTo(-w/2, h/2, -w/2, h/2 - r, r);
+    ctx.arcTo(-w/2, -h/2, -w/2 + r, -h/2, r);
+    ctx.closePath();
+    ctx.fillStyle = body; ctx.fill();
+    ctx.strokeStyle = "rgba(0,0,0,0.45)"; ctx.lineWidth = 1; ctx.stroke();
+    // windshield near the front (top)
+    ctx.beginPath();
+    ctx.roundRect(-w*0.3, -h*0.34, w*0.6, h*0.24, 2);
+    ctx.fillStyle = roof; ctx.fill();
+    ctx.restore();
+  }
+
+  function drawGrid() {
+    ctx.clearRect(0, 0, W, H);
+    const cx = W / 2;
+
+    // blind zones: everything behind ego, and a side wedge the forward sensors miss
+    ctx.fillStyle = "rgba(120,120,120,0.13)";
+    ctx.fillRect(0, EGO_Y, W, H - EGO_Y);            // rear
+    // forward sensing cone ~ ±25° of straight ahead; outside it is effectively blind
+    const half = 25 * Math.PI / 180;
+    ctx.beginPath();
+    ctx.moveTo(cx, EGO_Y);
+    ctx.lineTo(cx - Math.tan(half) * EGO_Y, 0);
+    ctx.lineTo(0, 0); ctx.lineTo(0, EGO_Y); ctx.closePath(); ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(cx, EGO_Y);
+    ctx.lineTo(cx + Math.tan(half) * EGO_Y, 0);
+    ctx.lineTo(W, 0); ctx.lineTo(W, EGO_Y); ctx.closePath(); ctx.fill();
+
+    // range rings
+    ctx.strokeStyle = "rgba(150,150,150,0.28)";
+    ctx.fillStyle = css("--text2");
+    ctx.font = "11px system-ui, sans-serif";
+    ctx.lineWidth = 1;
+    for (const m of [25, 50, 75, 100]) {
+      const r = m * SCALE;
+      ctx.beginPath(); ctx.arc(cx, EGO_Y, r, Math.PI, 2 * Math.PI); ctx.stroke();
+      ctx.fillText(m + " m", cx + 4, EGO_Y - r + 12);
+    }
+
+    // ego: our own car, green, pointing up
+    const green = css("--green") || "#1FC77D";
+    drawCar(cx, EGO_Y, 26, 46, green, "rgba(255,255,255,0.85)");
+    return cx;
+  }
+
+  // A model-confirmed lead vehicle -> drawn as a little car.
+  function plotLead(cx, o) {
+    const px = cx - o.y * SCALE;
+    const py = EGO_Y - o.x * SCALE;
+    if (py < -30 || px < -30 || px > W + 30) return;
+    drawCar(px, py, 24, 42, css("--green") || "#1FC77D", "rgba(255,255,255,0.8)");
+  }
+
+  // A raw radar return -> just a blip. It may be a vehicle, but equally a
+  // guardrail, sign, bridge or clutter, so we do NOT draw it as a car.
+  function plotTrack(cx, o) {
+    const px = cx - o.y * SCALE;
+    const py = EGO_Y - o.x * SCALE;
+    if (py < -20 || px < -20 || px > W + 20) return;
+    ctx.save();
+    ctx.translate(px, py); ctx.rotate(Math.PI / 4);   // diamond
+    ctx.fillStyle = "rgba(190,190,190,0.85)";
+    ctx.fillRect(-4, -4, 8, 8);
+    ctx.restore();
+  }
+
+  function setStatus(live) {
+    const el = document.getElementById("status");
+    el.className = "badge " + (live ? "badge-green" : "badge-red");
+    el.innerHTML = '<span class="dot ' + (live ? "dot-green" : "dot-red") + '"></span> ' +
+                   (live ? "Live" : "Geen live data");
+  }
+
+  async function tick() {
+    let data = null;
+    try {
+      const r = await fetch("/api/devices/" + encodeURIComponent(dongle) + "/telemetry",
+                            { cache: "no-store" });
+      if (r.ok) data = await r.json();
+    } catch (e) { /* keep last frame */ }
+
+    const cx = drawGrid();
+    if (data && data.live) {
+      setStatus(true);
+      (data.tracks || []).forEach(o => plotTrack(cx, o));
+      (data.leads || []).forEach(o => plotLead(cx, o));
+      document.getElementById("speed").textContent =
+        data.speed_mps == null ? "—" : Math.round(data.speed_mps * 3.6);
+      document.getElementById("heading").textContent =
+        data.bearing == null ? "—" : Math.round(data.bearing) + "°";
+      document.getElementById("objcount").textContent =
+        (data.leads || []).length + (data.tracks || []).length;
+      document.getElementById("coords").textContent =
+        (data.lat != null && data.lon != null)
+          ? data.lat.toFixed(5) + ", " + data.lon.toFixed(5) + " · " + (data.age_s ?? "?") + "s oud"
+          : "—";
+    } else {
+      setStatus(false);
+      ["speed", "heading", "objcount"].forEach(id => document.getElementById(id).textContent = "—");
+      document.getElementById("coords").textContent =
+        "Auto offline of niet aan het rijden — telemetrie komt alleen onroad.";
+    }
+  }
+
+  drawGrid();
+  tick();
+  setInterval(tick, 500);
+})();
+</script>
+{% endblock %}

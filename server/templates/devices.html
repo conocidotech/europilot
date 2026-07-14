@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% block title %}Devices — Europilot{% endblock %}
+{% block content %}
+<h1>Devices</h1>
+
+<div class="stats">
+  <div class="stat">
+    <div class="stat-value" style="color:var(--green)">{{ devices|selectattr("online")|list|length }}</div>
+    <div class="stat-label">Online</div>
+  </div>
+  <div class="stat">
+    <div class="stat-value">{{ devices|length }}</div>
+    <div class="stat-label">Geregistreerd</div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <h2 style="margin:0">Mijn Devices</h2>
+    <button class="btn btn-primary btn-sm" onclick="document.getElementById('addDeviceModal').classList.add('active')">+ Device Registreren</button>
+  </div>
+
+  {% if devices %}
+  <table>
+    <thead>
+      <tr>
+        <th>Status</th>
+        <th>Dongle ID</th>
+        <th>Naam</th>
+        <th>Auto</th>
+        <th>Software</th>
+        <th>Laatst gezien</th>
+        {% if session.is_admin %}<th>Eigenaar</th>{% endif %}
+        <th style="width:60px"></th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for d in devices %}
+      <tr>
+        <td>
+          {% if d.online %}
+            <span class="badge badge-green"><span class="dot dot-green"></span> Online</span>
+          {% else %}
+            <span class="badge badge-red"><span class="dot dot-red"></span> Offline</span>
+          {% endif %}
+        </td>
+        <td class="flag-key">{{ d.dongle_id }}</td>
+        <td>{{ d.device_name }}</td>
+        <td>{{ d.car_model or "—" }}</td>
+        <td><span class="flag-value">{{ d.software_version or "—" }}</span></td>
+        <td style="color:var(--text2)">{{ d.last_seen_fmt }}</td>
+        {% if session.is_admin %}<td style="color:var(--text2)">{{ d.owner or "—" }}</td>{% endif %}
+        <td style="white-space:nowrap">
+          <a href="/devices/{{ d.dongle_id }}/live" class="btn btn-outline btn-sm" title="Live meekijken">Live</a>
+          <form method="post" action="/devices/{{ d.dongle_id }}/delete" style="display:inline" onsubmit="return confirm('Device verwijderen?')">
+            <button type="submit" class="btn-ghost" title="Verwijderen">&#x1f5d1;</button>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p style="color:var(--text2);text-align:center;padding:32px 0">Nog geen devices geregistreerd. Klik op "+ Device Registreren" om je comma device te koppelen.</p>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>Device Heartbeat API</h2>
+  <p style="color:var(--text2);font-size:14px;margin-bottom:8px">Je comma device stuurt automatisch heartbeats naar de API om zijn status bij te werken:</p>
+  <pre style="background:var(--bg);padding:12px;border-radius:6px;font-size:13px;overflow-x:auto;color:var(--accent)">POST /api/devices/heartbeat
+Content-Type: application/json
+
+{"dongle_id": "jouw-id", "device_name": "comma four", "car_model": "Lexus NX300h", "software_version": "0.1.0"}</pre>
+</div>
+
+<div class="modal-overlay" id="addDeviceModal">
+  <div class="modal">
+    <h2>Device Registreren</h2>
+    <form method="post" action="/devices/register">
+      <div class="form-group">
+        <label for="dongle_id">Dongle ID</label>
+        <input type="text" id="dongle_id" name="dongle_id" placeholder="bijv. abc123def456" required>
+      </div>
+      <div class="form-group">
+        <label for="device_name">Device Naam</label>
+        <input type="text" id="device_name" name="device_name" value="comma four" required>
+      </div>
+      <div class="form-group">
+        <label for="car_model">Auto Model</label>
+        <input type="text" id="car_model" name="car_model" placeholder="bijv. Lexus NX300h">
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-outline" onclick="this.closest('.modal-overlay').classList.remove('active')">Annuleren</button>
+        <button type="submit" class="btn btn-primary">Registreren</button>
+      </div>
+    </form>
+  </div>
+</div>
+<script>
+document.getElementById('addDeviceModal').addEventListener('click', function(e) {
+  if (e.target === this) this.classList.remove('active');
+});
+</script>
+{% endblock %}
