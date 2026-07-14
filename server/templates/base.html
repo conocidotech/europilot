@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="nl" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Europilot{% endblock %}</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#0f1117;--surface:#1a1d27;--surface2:#242836;--border:#2e3347;--text:#e4e6ef;--text2:#8b8fa3;--accent:#4f8cff;--accent2:#3a6fd8;--green:#34d399;--red:#f87171;--orange:#fbbf24;--radius:10px;--shadow:0 2px 12px rgba(0,0,0,.3)}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;display:flex;flex-direction:column}
+a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
+
+.topbar{background:var(--surface);border-bottom:1px solid var(--border);padding:0 24px;height:56px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:10}
+.topbar-brand{display:flex;align-items:center;gap:10px;font-size:18px;font-weight:700;color:var(--text)}
+.topbar-brand svg{width:28px;height:28px}
+.topbar-nav{display:flex;gap:4px}
+.topbar-nav a{padding:8px 16px;border-radius:6px;color:var(--text2);font-size:14px;font-weight:500;transition:all .15s}
+.topbar-nav a:hover,.topbar-nav a.active{background:var(--surface2);color:var(--text);text-decoration:none}
+.topbar-right{display:flex;align-items:center;gap:12px;font-size:14px;color:var(--text2)}
+.topbar-right form{display:inline}
+.btn-logout{background:none;border:1px solid var(--border);color:var(--text2);padding:6px 14px;border-radius:6px;cursor:pointer;font-size:13px}
+.btn-logout:hover{border-color:var(--red);color:var(--red)}
+
+main{flex:1;padding:24px;max-width:1100px;width:100%;margin:0 auto}
+h1{font-size:24px;font-weight:700;margin-bottom:20px}
+h2{font-size:18px;font-weight:600;margin-bottom:14px}
+
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:20px;margin-bottom:16px;box-shadow:var(--shadow)}
+.card-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
+
+.badge{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:600}
+.badge-green{background:rgba(52,211,153,.15);color:var(--green)}
+.badge-red{background:rgba(248,113,113,.15);color:var(--red)}
+.badge-orange{background:rgba(251,191,36,.15);color:var(--orange)}
+.badge-blue{background:rgba(79,140,255,.15);color:var(--accent)}
+
+.dot{width:8px;height:8px;border-radius:50%;display:inline-block}
+.dot-green{background:var(--green)}
+.dot-red{background:var(--red)}
+
+table{width:100%;border-collapse:collapse}
+th{text-align:left;padding:10px 12px;font-size:13px;font-weight:600;color:var(--text2);border-bottom:1px solid var(--border)}
+td{padding:10px 12px;border-bottom:1px solid var(--border);font-size:14px}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:rgba(79,140,255,.04)}
+
+.flag-key{font-family:'SF Mono',Monaco,Consolas,monospace;font-size:13px;color:var(--accent)}
+.flag-value{font-family:'SF Mono',Monaco,Consolas,monospace;font-size:13px}
+.flag-desc{color:var(--text2);font-size:13px}
+
+.btn{display:inline-flex;align-items:center;gap:6px;padding:8px 18px;border-radius:6px;font-size:14px;font-weight:500;border:none;cursor:pointer;transition:all .15s}
+.btn-primary{background:var(--accent);color:#fff}.btn-primary:hover{background:var(--accent2)}
+.btn-danger{background:var(--red);color:#fff}.btn-danger:hover{background:#dc2626}
+.btn-sm{padding:5px 12px;font-size:13px}
+.btn-outline{background:none;border:1px solid var(--border);color:var(--text2)}.btn-outline:hover{border-color:var(--accent);color:var(--accent)}
+.btn-ghost{background:none;border:none;color:var(--text2);padding:5px 8px}.btn-ghost:hover{color:var(--red)}
+
+.form-group{margin-bottom:14px}
+.form-group label{display:block;font-size:13px;font-weight:500;color:var(--text2);margin-bottom:5px}
+input[type=text],input[type=password],textarea,select{width:100%;padding:9px 12px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:14px;font-family:inherit}
+input:focus,textarea:focus,select:focus{outline:none;border-color:var(--accent)}
+textarea{resize:vertical;min-height:60px}
+
+.toggle{position:relative;display:inline-block;width:44px;height:24px}
+.toggle input{opacity:0;width:0;height:0}
+.toggle-slider{position:absolute;cursor:pointer;inset:0;background:var(--border);border-radius:24px;transition:.2s}
+.toggle-slider:before{content:'';position:absolute;height:18px;width:18px;left:3px;bottom:3px;background:#fff;border-radius:50%;transition:.2s}
+.toggle input:checked+.toggle-slider{background:var(--green)}
+.toggle input:checked+.toggle-slider:before{transform:translateX(20px)}
+
+.kill-switch-banner{background:rgba(248,113,113,.1);border:1px solid rgba(248,113,113,.3);border-radius:var(--radius);padding:16px 20px;margin-bottom:16px;display:flex;align-items:center;gap:12px}
+.kill-switch-banner svg{flex-shrink:0;color:var(--red)}
+
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:20px}
+.stat{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px}
+.stat-value{font-size:28px;font-weight:700}
+.stat-label{font-size:13px;color:var(--text2);margin-top:2px}
+
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:100;align-items:center;justify-content:center}
+.modal-overlay.active{display:flex}
+.modal{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:24px;width:90%;max-width:460px;box-shadow:0 8px 32px rgba(0,0,0,.5)}
+.modal h2{margin-bottom:18px}
+.modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:18px}
+
+.flash{padding:12px 16px;border-radius:6px;margin-bottom:16px;font-size:14px}
+.flash-success{background:rgba(52,211,153,.12);border:1px solid rgba(52,211,153,.3);color:var(--green)}
+.flash-error{background:rgba(248,113,113,.12);border:1px solid rgba(248,113,113,.3);color:var(--red)}
+
+@media(max-width:640px){
+  main{padding:16px}
+  .stats{grid-template-columns:1fr 1fr}
+  .topbar-nav a{padding:6px 10px;font-size:13px}
+  table{font-size:13px}
+  th,td{padding:8px}
+}
+</style>
+{% block extra_head %}{% endblock %}
+</head>
+<body>
+{% if session %}
+<div class="topbar">
+  <div class="topbar-brand">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+    Europilot
+  </div>
+  <div class="topbar-nav">
+    <a href="/dashboard" class="{% if page == 'dashboard' %}active{% endif %}">Dashboard</a>
+    <a href="/rides" class="{% if page == 'rides' %}active{% endif %}">Ritten</a>
+    <a href="/devices" class="{% if page == 'devices' %}active{% endif %}">Devices</a>
+    {% if session.is_admin %}
+    <a href="/admin/flags" class="{% if page == 'admin' %}active{% endif %}">Admin</a>
+    {% endif %}
+  </div>
+  <div class="topbar-right">
+    <span>{{ session.username }}</span>
+    <form action="/logout" method="post"><button type="submit" class="btn-logout">Uitloggen</button></form>
+  </div>
+</div>
+{% endif %}
+
+<main>
+{% with messages = get_flashed_messages() %}
+{% if messages %}
+{% for cat, msg in messages %}
+<div class="flash flash-{{ cat }}">{{ msg }}</div>
+{% endfor %}
+{% endif %}
+{% endwith %}
+{% block content %}{% endblock %}
+</main>
+</body>
+</html>

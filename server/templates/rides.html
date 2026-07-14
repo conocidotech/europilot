@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block title %}Ritten — Europilot{% endblock %}
+{% block content %}
+<h1>Ritten</h1>
+
+<div class="stats">
+  <div class="stat">
+    <div class="stat-value" style="color:var(--accent)">{{ total_rides }}</div>
+    <div class="stat-label">Totaal ritten</div>
+  </div>
+  <div class="stat">
+    <div class="stat-value">{{ "%.1f"|format(total_km) }} km</div>
+    <div class="stat-label">Totaal afstand</div>
+  </div>
+  <div class="stat">
+    <div class="stat-value" style="color:var(--green)">{{ "%.0f"|format(avg_engaged) }}%</div>
+    <div class="stat-label">Gem. engaged</div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <h2>Recente Ritten</h2>
+    {% if rides %}
+    <span class="badge badge-blue">{{ rides|length }} ritten</span>
+    {% endif %}
+  </div>
+
+  {% if rides %}
+  <div style="overflow-x:auto">
+  <table>
+    <thead>
+      <tr>
+        <th>Datum</th>
+        <th>Tijd</th>
+        <th>Device</th>
+        <th>Afstand</th>
+        <th>Duur</th>
+        <th>Engaged</th>
+        <th>Max km/h</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for r in rides %}
+      <tr>
+        <td>{{ r.date_fmt }}</td>
+        <td>{{ r.time_fmt }}</td>
+        <td>{{ r.device_name or r.dongle_id }}</td>
+        <td>{{ r.distance_fmt }}</td>
+        <td>{{ r.duration_fmt }}</td>
+        <td><span class="badge {% if r.engaged_pct >= 80 %}badge-green{% elif r.engaged_pct >= 50 %}badge-orange{% else %}badge-red{% endif %}">{{ r.engaged_fmt }}</span></td>
+        <td>{{ "%.0f"|format(r.max_speed_kmh) if r.max_speed_kmh else "—" }}</td>
+        <td><a href="/rides/{{ r.id }}" class="btn btn-outline btn-sm">Details</a></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <div style="text-align:center;padding:40px;color:var(--text2)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="width:48px;height:48px;margin:0 auto 12px;display:block;opacity:.5">
+      <path d="M9 17H5a2 2 0 01-2-2V5a2 2 0 012-2h14a2 2 0 012 2v10a2 2 0 01-2 2h-4m-5 0v4m0-4h5m-5 4h5"/>
+      <path d="M12 8v4l2 2"/>
+    </svg>
+    <p>Nog geen ritten geregistreerd.</p>
+    <p style="margin-top:8px;font-size:13px">Ritten worden automatisch opgeslagen wanneer je met Europilot rijdt.</p>
+  </div>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>Rides API</h2>
+  <p style="color:var(--text2);margin-bottom:12px">Het comma device stuurt automatisch ritgegevens naar de API:</p>
+  <pre style="background:var(--bg);padding:12px;border-radius:6px;font-size:13px;overflow-x:auto"><code>POST /api/rides
+Content-Type: application/json
+
+{"dongle_id": "jouw-id", "started_at": 1720300000, "ended_at": 1720303600,
+ "distance_km": 42.5, "duration_sec": 3600, "engaged_pct": 87.3,
+ "start_lat": 52.3676, "start_lng": 4.9041, "end_lat": 52.0907, "end_lng": 5.1214,
+ "route": [[52.3676,4.9041],[52.3500,4.9200],[52.0907,5.1214]],
+ "max_speed_kmh": 130, "avg_speed_kmh": 85}</code></pre>
+</div>
+{% endblock %}

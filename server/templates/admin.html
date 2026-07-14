@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block title %}Admin — Europilot{% endblock %}
+{% block content %}
+<h1>Feature Flags Beheer</h1>
+
+<div class="card">
+  <div class="card-header">
+    <h2 style="margin:0">Kill Switch</h2>
+    <span class="badge {% if kill_switch.active %}badge-red{% else %}badge-green{% endif %}">
+      {% if kill_switch.active %}Actief{% else %}Inactief{% endif %}
+    </span>
+  </div>
+  <form method="post" action="/admin/kill-switch/toggle" style="display:flex;gap:12px;align-items:flex-end">
+    <div class="form-group" style="flex:1;margin:0">
+      <label for="ks_reason">Reden</label>
+      <input type="text" id="ks_reason" name="reason" value="{{ kill_switch.reason }}" placeholder="Reden voor activering...">
+    </div>
+    {% if kill_switch.active %}
+    <button type="submit" class="btn btn-primary">Deactiveren</button>
+    {% else %}
+    <button type="submit" class="btn btn-danger">Activeren</button>
+    {% endif %}
+  </form>
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <h2 style="margin:0">Flags</h2>
+    <button class="btn btn-primary btn-sm" onclick="document.getElementById('addModal').classList.add('active')">+ Nieuwe Flag</button>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th>Actief</th>
+        <th>Key</th>
+        <th>Waarde</th>
+        <th>Beschrijving</th>
+        <th style="width:100px">Acties</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for flag in flags %}
+      <tr>
+        <td>
+          <form method="post" action="/admin/flags/{{ flag.key }}/toggle" style="display:inline">
+            <label class="toggle">
+              <input type="checkbox" {% if flag.enabled %}checked{% endif %} onchange="this.form.submit()">
+              <span class="toggle-slider"></span>
+            </label>
+          </form>
+        </td>
+        <td class="flag-key">{{ flag.key }}</td>
+        <td>
+          <form method="post" action="/admin/flags/{{ flag.key }}/update" style="display:flex;gap:6px">
+            <input type="text" name="value" value="{{ flag.value }}" style="width:100px;padding:4px 8px;font-size:13px">
+            <button type="submit" class="btn btn-outline btn-sm">Opslaan</button>
+          </form>
+        </td>
+        <td class="flag-desc">{{ flag.description }}</td>
+        <td>
+          <form method="post" action="/admin/flags/{{ flag.key }}/delete" style="display:inline" onsubmit="return confirm('Flag \'{{ flag.key }}\' verwijderen?')">
+            <button type="submit" class="btn-ghost" title="Verwijderen">&#x1f5d1;</button>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="modal-overlay" id="addModal">
+  <div class="modal">
+    <h2>Nieuwe Feature Flag</h2>
+    <form method="post" action="/admin/flags/create">
+      <div class="form-group">
+        <label for="new_key">Key</label>
+        <input type="text" id="new_key" name="key" placeholder="bijv. new_feature" required pattern="[a-z0-9_]+" title="Alleen lowercase letters, cijfers en underscores">
+      </div>
+      <div class="form-group">
+        <label for="new_value">Waarde</label>
+        <input type="text" id="new_value" name="value" value="false" required>
+      </div>
+      <div class="form-group">
+        <label for="new_desc">Beschrijving</label>
+        <input type="text" id="new_desc" name="description" placeholder="Beschrijving van de flag...">
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-outline" onclick="this.closest('.modal-overlay').classList.remove('active')">Annuleren</button>
+        <button type="submit" class="btn btn-primary">Aanmaken</button>
+      </div>
+    </form>
+  </div>
+</div>
+<script>
+document.getElementById('addModal').addEventListener('click', function(e) {
+  if (e.target === this) this.classList.remove('active');
+});
+</script>
+{% endblock %}

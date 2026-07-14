@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — Europilot{% endblock %}
+{% block content %}
+<h1>Dashboard</h1>
+
+{% if kill_switch.active %}
+<div class="kill-switch-banner">
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+  <div>
+    <strong>Kill Switch Actief</strong>
+    {% if kill_switch.reason %}<br><span style="color:var(--text2)">{{ kill_switch.reason }}</span>{% endif %}
+  </div>
+</div>
+{% endif %}
+
+<div class="stats">
+  <div class="stat">
+    <div class="stat-value" style="color:var(--green)">{{ flags_enabled }}</div>
+    <div class="stat-label">Flags aan</div>
+  </div>
+  <div class="stat">
+    <div class="stat-value">{{ flags_total }}</div>
+    <div class="stat-label">Totaal flags</div>
+  </div>
+  <div class="stat">
+    <div class="stat-value {% if kill_switch.active %}style="color:var(--red)"{% endif %}">
+      {% if kill_switch.active %}Actief{% else %}Uit{% endif %}
+    </div>
+    <div class="stat-label">Kill Switch</div>
+  </div>
+  <div class="stat">
+    <div class="stat-value" style="color:var(--green)">Online</div>
+    <div class="stat-label">Server Status</div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <h2 style="margin:0">Feature Flags</h2>
+    <span class="badge badge-blue">{{ flags_total }} geconfigureerd</span>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th>Status</th>
+        <th>Flag</th>
+        <th>Waarde</th>
+        <th>Beschrijving</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for flag in flags %}
+      <tr>
+        <td>
+          {% if flag.enabled %}
+            <span class="badge badge-green"><span class="dot dot-green"></span> Aan</span>
+          {% else %}
+            <span class="badge badge-red"><span class="dot dot-red"></span> Uit</span>
+          {% endif %}
+        </td>
+        <td class="flag-key">{{ flag.key }}</td>
+        <td class="flag-value">{{ flag.value }}</td>
+        <td class="flag-desc">{{ flag.description }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="card">
+  <h2>Ritten</h2>
+  <p style="color:var(--text2);text-align:center;padding:24px 0">Nog geen ritten. Start een rit met Europilot!</p>
+</div>
+{% endblock %}
