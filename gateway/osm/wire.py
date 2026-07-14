@@ -31,6 +31,7 @@ _ROAD_CLASS_ENUM = {
 }
 _PRESENCE_ENUM = {None: "unknown", False: "absent", True: "present"}
 _CAMERA_KIND_ENUM = {"fixed": "fixed", "section": "section"}
+_ROUNDABOUT_KIND_ENUM = {"roundabout": "roundabout", "mini": "mini"}
 
 _SCHEMA = None
 
@@ -50,6 +51,14 @@ def normalize_camera(cam: dict) -> dict:
         "point": [_scale(cam["lat"]), _scale(cam["lon"])],
         "maxspeed": _u8(cam.get("maxspeed")),
         "kind": _CAMERA_KIND_ENUM.get(cam.get("kind"), "fixed"),
+    }
+
+
+def normalize_roundabout(rb: dict) -> dict:
+    """Canonical, wire-ready form of one roundabout (point scaled, kind -> enum)."""
+    return {
+        "point": [_scale(rb["lat"]), _scale(rb["lon"])],
+        "kind": _ROUNDABOUT_KIND_ENUM.get(rb.get("kind"), "roundabout"),
     }
 
 
@@ -81,6 +90,10 @@ def normalize_road(rec: dict) -> dict:
     cameras = [normalize_camera(c) for c in rec.get("cameras", [])]
     if cameras:
         road["cameras"] = sorted(cameras, key=lambda c: (c["point"][0], c["point"][1], c["kind"]))
+    # Same "only when present" rule so a roundabout-less tile hashes as before.
+    roundabouts = [normalize_roundabout(r) for r in rec.get("roundabouts", [])]
+    if roundabouts:
+        road["roundabouts"] = sorted(roundabouts, key=lambda r: (r["point"][0], r["point"][1], r["kind"]))
     return road
 
 
@@ -161,6 +174,12 @@ def to_capnp_bytes(norm: dict, *, generated_at_unix_s: int = 0) -> bytes:
             cam_list[k].point.lon = cn["point"][1]
             cam_list[k].maxspeed = cn["maxspeed"]
             cam_list[k].kind = cn["kind"]
+        rbs = rn.get("roundabouts", [])
+        rb_list = r.init("roundabouts", len(rbs))
+        for k, rbn in enumerate(rbs):
+            rb_list[k].point.lat = rbn["point"][0]
+            rb_list[k].point.lon = rbn["point"][1]
+            rb_list[k].kind = rbn["kind"]
     return tile.to_bytes()
 
 
@@ -204,5 +223,7 @@ def from_capnp_bytes(data: bytes) -> dict:
                 "points": [[p.lat, p.lon] for p in r.points],
                 "cameras": [{"point": [c.point.lat, c.point.lon],
                              "maxspeed": c.maxspeed, "kind": str(c.kind)} for c in r.cameras],
+                "roundabouts": [{"point": [rb.point.lat, rb.point.lon],
+                                 "kind": str(rb.kind)} for rb in r.roundabouts],
             } for r in tile.roads],
         }

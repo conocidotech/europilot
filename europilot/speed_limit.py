@@ -19,7 +19,7 @@ Merge-safe: this file is new and does not modify upstream openpilot logic.
 
 from europilot.rsa import speed_limit_from_can, RSA1_ADDR
 from europilot.advisories import mandatory_speed, advisory_speed
-from europilot.cruise import cruise_target_kph
+from europilot.cruise import cruise_target_kph, roundabout_target_kph
 
 RATE_HZ = 5.0
 SERVICE = "euSpeedLimit"
@@ -127,6 +127,7 @@ def main():
             road_class = ""
             cam_distance = None
             cam_limit = None
+            rb_distance = None
             if sm.valid["euMapAdvisory"] and sm.recv_frame["euMapAdvisory"] > 0:
                 adv = sm["euMapAdvisory"]
                 if adv.valid:
@@ -136,6 +137,8 @@ def main():
                     if adv.cameraDistance >= 0:
                         cam_distance = adv.cameraDistance
                         cam_limit = adv.cameraLimit if adv.cameraLimit > 0 else None
+                    if adv.roundaboutDistance >= 0:
+                        rb_distance = adv.roundaboutDistance
 
             limit, source = fuse_speed_limit(
                 ndw_mandatory=mandatory_speed(signs),
@@ -145,12 +148,17 @@ def main():
                 time_of_day=motorway_day_limit(road_class, _nl_hour()),
             )
 
-            # The one control-affecting output: ease cruise toward the enforced
-            # limit approaching a camera. -1 unless easing is active this cycle.
+            # The control-affecting output: ease cruise approaching a camera
+            # (toward its limit) or a roundabout (toward a comfortable speed).
+            # Published as two independent targets so each opt-in toggle in the
+            # planner gates its own. -1 means no easing from that source this cycle.
             v_ego_kph = sm["carState"].vEgo * 3.6 if sm.valid["carState"] else 0.0
-            cruise_target = cruise_target_kph(
+            cam_target = cruise_target_kph(
                 camera_distance_m=cam_distance, camera_limit=cam_limit,
                 fused_limit_kph=limit, v_ego_kph=v_ego_kph,
+            )
+            rb_target = roundabout_target_kph(
+                roundabout_distance_m=rb_distance, v_ego_kph=v_ego_kph,
             )
 
             m = messaging.new_message(SERVICE)
@@ -159,7 +167,8 @@ def main():
             dat.valid = limit is not None
             dat.speedLimit = limit if limit is not None else -1
             dat.source = source
-            dat.cruiseTarget = cruise_target if cruise_target is not None else -1
+            dat.cruiseTarget = cam_target if cam_target is not None else -1
+            dat.roundaboutTarget = rb_target if rb_target is not None else -1
             pm.send(SERVICE, m)
         except Exception:
             cloudlog.exception("europilot_speedlimitd iteration failed; publishing fail-closed")
@@ -169,6 +178,7 @@ def main():
                 m.euSpeedLimit.speedLimit = -1
                 m.euSpeedLimit.source = "none"
                 m.euSpeedLimit.cruiseTarget = -1
+                m.euSpeedLimit.roundaboutTarget = -1
                 pm.send(SERVICE, m)
             except Exception:
                 cloudlog.exception("europilot_speedlimitd could not publish fail-closed heartbeat")

@@ -17,6 +17,7 @@ import json
 
 from gateway.osm import tags as osm_tags
 from gateway.osm.cameras import cameras_by_way
+from gateway.osm.roundabouts import roundabouts_by_way
 from gateway.osm.grid import centroid, tile_of
 from gateway.osm.osm_source import OsmData, Way
 from gateway.osm.spatial import (
@@ -56,6 +57,7 @@ def build_tiles_full(data: OsmData) -> dict[tuple[int, int], list[dict]]:
     calming = tagged_points(data, lambda t: "traffic_calming" in t)
     crossings = tagged_points(data, lambda t: t.get("highway") == "crossing")
     cameras = cameras_by_way(data)
+    roundabouts = roundabouts_by_way(data)
 
     tiles: dict[tuple[int, int], list[dict]] = {}
     for way in data.ways:
@@ -84,6 +86,7 @@ def build_tiles_full(data: OsmData) -> dict[tuple[int, int], list[dict]]:
             "residentialScore": score,
             "comfortSpeed": comfort_speed(score, record["maxspeed"]),
             "cameras": cameras.get(way.id, []),
+            "roundabouts": roundabouts.get(way.id, []),
         })
         tiles.setdefault(tile_of(*centroid(coords)), []).append(record)
     return tiles
