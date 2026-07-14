@@ -8,6 +8,7 @@ from openpilot.common.filter_simple import FirstOrderFilter
 from openpilot.selfdrive.locationd.calibrationd import HEIGHT_INIT
 from openpilot.selfdrive.ui.ui_state import ui_state, UIStatus
 from openpilot.selfdrive.ui.mici.onroad import blend_colors
+from openpilot.selfdrive.ui.mici.theme import ACCENT
 from openpilot.system.ui.lib.application import gui_app
 from openpilot.system.ui.lib.shader_polygon import draw_polygon, Gradient
 from openpilot.system.ui.widgets import Widget
@@ -31,7 +32,7 @@ NO_THROTTLE_COLORS = [
 LANE_LINE_COLORS = {
   UIStatus.DISENGAGED: rl.Color(200, 200, 200, 255),
   UIStatus.OVERRIDE: rl.Color(255, 255, 255, 255),
-  UIStatus.ENGAGED: rl.Color(0, 255, 64, 255),
+  UIStatus.ENGAGED: ACCENT,   # europilot accent green for the engaged lane lines
 }
 
 
