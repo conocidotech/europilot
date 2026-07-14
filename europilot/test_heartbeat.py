@@ -43,6 +43,40 @@ def test_payload_shape():
     assert set(p) == {"dongle_id", "device_name", "car_model", "software_version"}
 
 
+def test_telemetry_none_without_gps():
+    assert heartbeat.build_telemetry("x", None, [], []) is None
+    assert heartbeat.build_telemetry("x", {"lat": None, "lon": 4.0}, [], []) is None
+    assert heartbeat.build_telemetry("", {"lat": 52.0, "lon": 4.0}, [], []) is None
+
+
+def test_telemetry_basic_frame():
+    gps = {"lat": 52.1, "lon": 4.2, "bearing": 90.0, "speed": 13.4}
+    leads = [{"x": 30.0, "y": 0.5, "v": 12.0, "prob": 0.9}]
+    tracks = [{"x": 40.0, "y": -3.0, "v": -2.0}, {"x": 25.0, "y": 3.5, "v": 1.0}]
+    f = heartbeat.build_telemetry("dongle", gps, leads, tracks)
+    assert f["lat"] == 52.1 and f["lon"] == 4.2
+    assert f["bearing"] == 90.0 and f["speed_mps"] == 13.4
+    assert f["leads"] == [{"x": 30.0, "y": 0.5, "v": 12.0, "prob": 0.9}]
+    assert len(f["tracks"]) == 2
+
+
+def test_telemetry_drops_nan_and_caps():
+    nan = float("nan")
+    gps = {"lat": 52.0, "lon": 4.0, "bearing": nan, "speed": 10.0}
+    # one object has NaN x -> dropped; more than the cap -> truncated
+    objs = [{"x": nan, "y": 1.0}] + [{"x": float(i), "y": 0.0} for i in range(50)]
+    f = heartbeat.build_telemetry("d", gps, objs, [])
+    assert f["bearing"] is None            # NaN scalar -> None
+    assert len(f["leads"]) == heartbeat.TELEMETRY_MAX_OBJECTS
+    assert all("x" in o and "y" in o for o in f["leads"])
+
+
+def test_telemetry_omits_missing_optional_fields():
+    gps = {"lat": 52.0, "lon": 4.0, "bearing": 0.0, "speed": 0.0}
+    f = heartbeat.build_telemetry("d", gps, [{"x": 10.0, "y": 0.0}], [])
+    assert f["leads"] == [{"x": 10.0, "y": 0.0}]   # no v / prob keys when absent
+
+
 def test_posts_json_body_to_endpoint(monkeypatch):
     seen = {}
 
