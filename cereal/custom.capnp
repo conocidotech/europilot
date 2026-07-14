@@ -84,6 +84,11 @@ struct MapAdvisory @0xaedffd8f31e7b55d {
   cameraLimit @12 :Int16;      # enforced km/h there; -1 unknown (use the road limit)
   cameraKind @13 :Text;        # "fixed" | "section" | "" none
 
+  # Next roundabout ahead on the matched road (advisory). The device eases toward
+  # a comfortable approach speed; there is no posted limit at a roundabout.
+  roundaboutDistance @14 :Float32; # along-road meters to it; -1 none ahead
+  roundaboutKind @15 :Text;        # "roundabout" | "mini" | "" none
+
   # Three-valued on purpose: unknown is NOT absent (no tag and no parallel path
   # seen), carried through from the tile so the device never reads silence as
   # "no bike path here".
@@ -117,6 +122,7 @@ struct SpeedLimit @0xda96579883444c35 {
   speedLimit @2 :Int16;       # km/h; -1 unknown -- ADVISORY (display/fusion)
   source @3 :Source;
   cruiseTarget @4 :Int16;     # km/h to cap cruise at near a camera; -1 = no easing
+  roundaboutTarget @5 :Int16; # km/h to cap cruise at near a roundabout; -1 = no easing
 
   # Ordered roughly by authority/currency. Append new sources; never renumber.
   enum Source {
