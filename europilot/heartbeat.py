@@ -34,8 +34,13 @@ from europilot.osm.client import gateway_host
 INTERVAL_S = 60.0       # server marks a device offline after 300s, so beat well under that
 TIMEOUT_S = 10.0
 TELEMETRY_INTERVAL_S = 1.0    # live-view refresh while onroad
+TELEMETRY_TIMEOUT_S = 3.0     # short, so a slow gateway can't stall the 1 Hz loop
 TELEMETRY_MAX_OBJECTS = 32    # cap leads/tracks per frame (bound payload size)
-TELEMETRY_SERVICES = ["gpsLocationExternal", "modelV2", "liveTracks", "carState"]
+# Both GPS backends: comma four (Quectel) publishes gpsLocation via qcomgpsd,
+# ublox devices publish gpsLocationExternal. The fork's advisory daemons use
+# gpsLocation, so subscribe to both and take whichever has a fix.
+GPS_SERVICES = ["gpsLocation", "gpsLocationExternal"]
+TELEMETRY_SERVICES = [*GPS_SERVICES, "modelV2", "liveTracks", "carState"]
 DEVICE_NAME = "Europilot"
 NAME_FILE = "/data/europilot_device_name"   # optional: one line overrides the display name
 
@@ -163,20 +168,33 @@ def build_telemetry(dongle_id: str, gps: dict | None,
     }
 
 
+def _read_gps(sm) -> dict | None:
+    """First GPS service with a fix, as {lat,lon,bearing,speed}, or None.
+
+    Tries gpsLocation (qcom/Quectel) then gpsLocationExternal (ublox): the device
+    may publish either, so hardcoding one would blank the map on the other.
+    """
+    for svc in GPS_SERVICES:
+        try:
+            if not sm.valid.get(svc, False):
+                continue
+            g = sm[svc]
+            if not getattr(g, "hasFix", False):
+                continue
+            return {"lat": g.latitude, "lon": g.longitude,
+                    "bearing": g.bearingDeg, "speed": g.speed}
+        except Exception:
+            continue
+    return None
+
+
 def collect_telemetry(dongle_id: str, sm) -> dict | None:
     """Extract a telemetry frame from a live SubMaster (device-only).
 
     Guards every field access -- a missing or not-yet-valid service just yields
     fewer objects or None, never an exception.
     """
-    gps = None
-    try:
-        g = sm["gpsLocationExternal"]
-        if sm.valid.get("gpsLocationExternal", True) and getattr(g, "hasFix", True):
-            gps = {"lat": g.latitude, "lon": g.longitude,
-                   "bearing": g.bearingDeg, "speed": g.speed}
-    except Exception:
-        gps = None
+    gps = _read_gps(sm)
 
     leads = []
     try:
@@ -203,7 +221,7 @@ def post_telemetry(host: str, payload: dict) -> None:
         f"{host}/api/devices/telemetry", data=body,
         headers={"Content-Type": "application/json"}, method="POST",
     )
-    with urllib.request.urlopen(req, timeout=TIMEOUT_S) as resp:
+    with urllib.request.urlopen(req, timeout=TELEMETRY_TIMEOUT_S) as resp:
         resp.read()
 
 

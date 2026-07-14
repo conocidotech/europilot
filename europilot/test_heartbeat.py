@@ -77,6 +77,38 @@ def test_telemetry_omits_missing_optional_fields():
     assert f["leads"] == [{"x": 10.0, "y": 0.0}]   # no v / prob keys when absent
 
 
+class _Gps:
+    def __init__(self, hasFix, lat=52.0, lon=4.0, bearing=90.0, speed=10.0):
+        self.hasFix, self.latitude, self.longitude = hasFix, lat, lon
+        self.bearingDeg, self.speed = bearing, speed
+
+
+class _SM:
+    def __init__(self, msgs, valid):
+        self._msgs, self.valid = msgs, valid
+
+    def __getitem__(self, k):
+        return self._msgs[k]
+
+
+def test_read_gps_prefers_first_valid_with_fix():
+    sm = _SM({"gpsLocation": _Gps(True, lat=51.5), "gpsLocationExternal": _Gps(True, lat=52.5)},
+             {"gpsLocation": True, "gpsLocationExternal": True})
+    assert heartbeat._read_gps(sm)["lat"] == 51.5   # gpsLocation wins (listed first)
+
+
+def test_read_gps_falls_back_to_external():
+    sm = _SM({"gpsLocation": _Gps(False), "gpsLocationExternal": _Gps(True, lat=52.5)},
+             {"gpsLocation": True, "gpsLocationExternal": True})
+    assert heartbeat._read_gps(sm)["lat"] == 52.5   # gpsLocation has no fix -> external
+
+
+def test_read_gps_none_when_no_fix_or_invalid():
+    sm = _SM({"gpsLocation": _Gps(False), "gpsLocationExternal": _Gps(True)},
+             {"gpsLocation": True, "gpsLocationExternal": False})   # external not valid
+    assert heartbeat._read_gps(sm) is None
+
+
 def test_posts_json_body_to_endpoint(monkeypatch):
     seen = {}
 
