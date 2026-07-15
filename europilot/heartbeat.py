@@ -24,11 +24,13 @@ Merge-safe: new file; the only upstream edit is one process_config line.
 """
 
 import json
+import threading
 import time
 import urllib.request
 
 from openpilot.common.params import Params
 from openpilot.common.swaglog import cloudlog
+from europilot.loopwatch import LoopWatch
 from europilot.osm.client import gateway_host
 
 INTERVAL_S = 60.0       # server marks a device offline after 300s, so beat well under that
@@ -239,29 +241,79 @@ def _make_submaster():
         return None
 
 
+class _Poster(threading.Thread):
+    """Does the HTTP posts off the main loop.
+
+    A blocking network call every second (a slow/metered cell can take seconds)
+    has no business on a loop that also drains msgq -- it would add scheduling
+    jitter. The main loop just hands over the latest payload; this thread posts
+    it. Only the newest telemetry frame is kept: a stale live-view frame is
+    worthless, so we never build a backlog.
+    """
+
+    def __init__(self, host: str):
+        super().__init__(daemon=True)
+        self._host = host
+        self._cv = threading.Condition()
+        self._heartbeat: dict | None = None
+        self._telemetry: dict | None = None
+
+    def submit_heartbeat(self, payload: dict) -> None:
+        with self._cv:
+            self._heartbeat = payload
+            self._cv.notify()
+
+    def submit_telemetry(self, frame: dict) -> None:
+        with self._cv:
+            self._telemetry = frame   # keep only the latest
+            self._cv.notify()
+
+    def run(self) -> None:
+        while True:
+            with self._cv:
+                while self._heartbeat is None and self._telemetry is None:
+                    self._cv.wait()
+                hb, self._heartbeat = self._heartbeat, None
+                tel, self._telemetry = self._telemetry, None
+            if hb is not None:
+                try:
+                    post_heartbeat(self._host, hb)
+                except Exception:
+                    cloudlog.exception("europilot_heartbeatd heartbeat post failed")
+            if tel is not None:
+                try:
+                    post_telemetry(self._host, tel)
+                except Exception:
+                    cloudlog.exception("europilot_heartbeatd telemetry post failed")
+
+
 def main() -> None:
     params = Params()
     host = gateway_host()
     sm = _make_submaster()
+    poster = _Poster(host)
+    poster.start()
+    watch = LoopWatch("heartbeatd", budget_s=2.0)   # loop period is 1s; flag real stalls
     cloudlog.info("europilot_heartbeatd starting (host=%s, telemetry=%s)", host, sm is not None)
 
     last_heartbeat = 0.0
     while True:
+        watch.tick()
         now = time.monotonic()
 
-        # identity heartbeat, at its own slow cadence
+        # identity heartbeat, at its own slow cadence (posted off-thread)
         if now - last_heartbeat >= INTERVAL_S:
             try:
                 payload = build_payload(params)
                 if payload is None:
                     cloudlog.info("europilot_heartbeatd: no DongleId yet, skipping beat")
                 else:
-                    post_heartbeat(host, payload)
+                    poster.submit_heartbeat(payload)
             except Exception:
-                cloudlog.exception("europilot_heartbeatd beat failed; will retry")
+                cloudlog.exception("europilot_heartbeatd beat build failed; will retry")
             last_heartbeat = now
 
-        # live telemetry while onroad -- best-effort, never fatal
+        # live telemetry while onroad -- best-effort, never fatal, posted off-thread
         if sm is not None:
             try:
                 sm.update(0)
@@ -269,7 +321,7 @@ def main() -> None:
                     dongle_id = _as_str(params.get("DongleId"))
                     frame = collect_telemetry(dongle_id, sm)
                     if frame is not None:
-                        post_telemetry(host, frame)
+                        poster.submit_telemetry(frame)
             except Exception:
                 cloudlog.exception("europilot_heartbeatd telemetry tick failed; will retry")
 

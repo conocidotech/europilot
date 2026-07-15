@@ -71,16 +71,20 @@ def main():
     from openpilot.common.realtime import Ratekeeper
     from openpilot.common.swaglog import cloudlog
 
+    from europilot.loopwatch import LoopWatch
+
     pm = messaging.PubMaster([SERVICE])
     sm = messaging.SubMaster(["gpsLocation"])
     client = MatrixSignClient()
     rk = Ratekeeper(RATE_HZ, print_delay_threshold=None)
+    watch = LoopWatch("europilotd", budget_s=3.0 / RATE_HZ)
 
     # An advisory daemon must never take the process down: a crash here is a
     # monitored-process fault that soft-disables openpilot. So the whole loop
     # body is guarded -- any fault publishes a fail-closed heartbeat and we go
     # on, degrading to "no advisory" instead of handing back control.
     while True:
+        watch.tick()
         try:
             sm.update(0)
 

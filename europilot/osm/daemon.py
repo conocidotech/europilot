@@ -63,14 +63,18 @@ def main():
     from openpilot.common.realtime import Ratekeeper
     from openpilot.common.swaglog import cloudlog
 
+    from europilot.loopwatch import LoopWatch
+
     client = OsmTileClient()
     pm = messaging.PubMaster([SERVICE])
     sm = messaging.SubMaster(["gpsLocation"])
     rk = Ratekeeper(RATE_HZ, print_delay_threshold=None)
+    watch = LoopWatch("europilot_osmd", budget_s=3.0 / RATE_HZ)
 
     # Advisory-only: a crash here would soft-disable openpilot, so guard the
     # whole body and degrade to a fail-closed heartbeat instead.
     while True:
+        watch.tick()
         try:
             sm.update(0)
 

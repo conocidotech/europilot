@@ -94,9 +94,12 @@ def main():
     from openpilot.common.realtime import Ratekeeper
     from openpilot.common.swaglog import cloudlog
 
+    from europilot.loopwatch import LoopWatch
+
     pm = messaging.PubMaster([SERVICE])
     sm = messaging.SubMaster(["can", "euNdwMatrixSigns", "euMapAdvisory", "carState"])
     rk = Ratekeeper(RATE_HZ, print_delay_threshold=None)
+    watch = LoopWatch("europilot_speedlimitd", budget_s=3.0 / RATE_HZ)
 
     rsa_limit: int | None = None
     rsa_seen = 0.0
@@ -104,6 +107,7 @@ def main():
     # Advisory-only: never let a fault take the process down (that soft-disables
     # openpilot). Guard the loop body and publish a fail-closed heartbeat.
     while True:
+        watch.tick()
         try:
             sm.update(0)
             now = time.monotonic()
