@@ -99,6 +99,11 @@ struct MapAdvisory @0xaedffd8f31e7b55d {
   # matched road, holding at this enforced km/h; -1 == not in a section.
   sectionLimit @19 :Int16;
 
+  # Next stop / give-way sign ahead on the matched road (advisory HEADS-UP only,
+  # never an ease). signKind is "stop" | "giveWay" | "" (none).
+  signDistance @20 :Float32;  # along-road meters to it; -1 none ahead
+  signKind @21 :Text;
+
   # Three-valued on purpose: unknown is NOT absent (no tag and no parallel path
   # seen), carried through from the tile so the device never reads silence as
   # "no bike path here".

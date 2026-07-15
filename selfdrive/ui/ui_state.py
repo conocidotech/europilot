@@ -58,6 +58,7 @@ class UIState:
         "testJoystick",
         "rawAudioData",
         "euSpeedLimit",
+        "euMapAdvisory",
       ]
     )
 

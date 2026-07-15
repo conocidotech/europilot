@@ -21,6 +21,7 @@ MAX_BEARING_DELTA_DEG = 45.0  # heading vs road direction, undirected
 CAMERA_MAX_OFFSET_M = 30.0    # a camera must project this close to the road to count
 ROUNDABOUT_MAX_OFFSET_M = 20.0  # an entry node sits on the road, so keep this tight
 CURVE_MAX_OFFSET_M = 10.0       # a curve marker is a vertex OF the road -> very tight
+SIGN_MAX_OFFSET_M = 15.0        # a sign node sits on the road -> keep tight
 EARTH_R = 6_371_000.0
 
 
@@ -167,6 +168,40 @@ def next_curve_ahead(pose: tuple[float, float], heading: float | None,
     return best
 
 
+def next_sign_ahead(pose: tuple[float, float], heading: float | None,
+                    road: Road) -> tuple[float, str] | None:
+    """(distance_m, kind) of the nearest stop/give-way sign ahead on this road.
+
+    Same shape and fail-safe as next_curve_ahead: needs a heading, and the sign
+    node must project onto the road. Heads-up only -- returns None when nothing is
+    ahead, so a sign already behind us never shows.
+    """
+    if heading is None or not road.signs or len(road.points) < 2:
+        return None
+    ref = road.points[0]
+    pts = [_to_xy(ref, p) for p in road.points]
+    cum = [0.0]
+    for i in range(len(pts) - 1):
+        cum.append(cum[-1] + math.hypot(pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1]))
+
+    forward = _travels_forward(road, pose, heading)
+    if forward is None:
+        return None
+    s_pose, _ = _project(pts, cum, _to_xy(ref, pose))
+
+    best: tuple[float, str] | None = None
+    for sg in road.signs:
+        s_sg, off = _project(pts, cum, _to_xy(ref, (sg.lat, sg.lon)))
+        if off > SIGN_MAX_OFFSET_M:
+            continue
+        ahead = (s_sg - s_pose) if forward else (s_pose - s_sg)
+        if ahead <= 0:
+            continue
+        if best is None or ahead < best[0]:
+            best = (round(ahead, 1), sg.kind)
+    return best
+
+
 def _nearest_segment_bearing(road: Road, pose: tuple[float, float]) -> float | None:
     pts = road.points
     if len(pts) < 2:
@@ -208,6 +243,7 @@ def _advisory(road: Road, distance_m: float, pose: tuple[float, float],
     cam = next_camera_ahead(pose, heading, road)
     rb = next_roundabout_ahead(pose, heading, road)
     cv = next_curve_ahead(pose, heading, road)
+    sg = next_sign_ahead(pose, heading, road)
     return Advisory(
         valid=True,
         road_id=road.id,
@@ -229,6 +265,8 @@ def _advisory(road: Road, distance_m: float, pose: tuple[float, float],
         roundabout_radius_m=rb[2] if rb else 0,
         curve_distance_m=cv[0] if cv else None,
         curve_radius_m=cv[1] if cv else 0,
+        sign_distance_m=sg[0] if sg else None,
+        sign_kind=sg[1] if sg else "",
     )
 
 

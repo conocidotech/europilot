@@ -9,7 +9,7 @@ ordinary units.
 
 from pathlib import Path
 
-from europilot.osm.types import Camera, Curve, Road, Roundabout
+from europilot.osm.types import Camera, Curve, Road, Roundabout, Sign
 
 COORD_SCALE = 10_000_000.0
 _SCHEMA_PATH = Path(__file__).resolve().parents[2] / "gateway" / "osm" / "maptile.capnp"
@@ -55,6 +55,14 @@ def _curve(cv) -> Curve:
     )
 
 
+def _sign(sg) -> Sign:
+    return Sign(
+        lat=sg.point.lat / COORD_SCALE,
+        lon=sg.point.lon / COORD_SCALE,
+        kind=str(sg.kind),
+    )
+
+
 def _road(r) -> Road:
     return Road(
         id=r.id,
@@ -75,6 +83,7 @@ def _road(r) -> Road:
         cameras=tuple(_camera(c) for c in r.cameras),
         roundabouts=tuple(_roundabout(rb) for rb in r.roundabouts),
         curves=tuple(_curve(cv) for cv in r.curves),
+        signs=tuple(_sign(sg) for sg in r.signs),
     )
 
 

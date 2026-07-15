@@ -73,6 +73,18 @@ struct Curve {
   radiusM @1 :UInt16;  # min turn radius in metres; sizes the cornering speed
 }
 
+enum SignKind {
+  stop @0;      # highway=stop
+  giveWay @1;   # highway=give_way (voorrang verlenen)
+}
+
+# A stop / give-way sign on THIS road, at its node (gateway/osm/signs.py).
+# Advisory HEADS-UP only: the device shows the next one ahead, never eases for it.
+struct Sign {
+  point @0 :Point;
+  kind @1 :SignKind;
+}
+
 struct Road {
   id @0 :UInt64;
   roadClass @1 :RoadClass;
@@ -100,6 +112,9 @@ struct Road {
 
   # sharp bends on THIS road (gateway/osm/curves.py)
   curves @17 :List(Curve);
+
+  # stop / give-way signs on THIS road (gateway/osm/signs.py)
+  signs @18 :List(Sign);
 }
 
 struct MapTile {

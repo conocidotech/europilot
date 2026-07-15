@@ -32,6 +32,7 @@ _ROAD_CLASS_ENUM = {
 _PRESENCE_ENUM = {None: "unknown", False: "absent", True: "present"}
 _CAMERA_KIND_ENUM = {"fixed": "fixed", "section": "section"}
 _ROUNDABOUT_KIND_ENUM = {"roundabout": "roundabout", "mini": "mini"}
+_SIGN_KIND_ENUM = {"stop": "stop", "giveWay": "giveWay"}
 
 _SCHEMA = None
 
@@ -76,6 +77,14 @@ def normalize_curve(cv: dict) -> dict:
     }
 
 
+def normalize_sign(sg: dict) -> dict:
+    """Canonical, wire-ready form of one stop/give-way sign (point scaled, kind enum)."""
+    return {
+        "point": [_scale(sg["lat"]), _scale(sg["lon"])],
+        "kind": _SIGN_KIND_ENUM.get(sg.get("kind"), "stop"),
+    }
+
+
 def normalize_road(rec: dict) -> dict:
     """Canonical, wire-ready form of one derived way record.
 
@@ -112,6 +121,10 @@ def normalize_road(rec: dict) -> dict:
     curves = [normalize_curve(c) for c in rec.get("curves", [])]
     if curves:
         road["curves"] = sorted(curves, key=lambda c: (c["point"][0], c["point"][1], c["radiusM"]))
+    # Same "only when present" rule so a sign-less tile hashes exactly as before.
+    signs = [normalize_sign(s) for s in rec.get("signs", [])]
+    if signs:
+        road["signs"] = sorted(signs, key=lambda s: (s["point"][0], s["point"][1], s["kind"]))
     return road
 
 
@@ -205,6 +218,12 @@ def to_capnp_bytes(norm: dict, *, generated_at_unix_s: int = 0) -> bytes:
             cv_list[k].point.lat = cvn["point"][0]
             cv_list[k].point.lon = cvn["point"][1]
             cv_list[k].radiusM = cvn["radiusM"]
+        sgs = rn.get("signs", [])
+        sg_list = r.init("signs", len(sgs))
+        for k, sgn in enumerate(sgs):
+            sg_list[k].point.lat = sgn["point"][0]
+            sg_list[k].point.lon = sgn["point"][1]
+            sg_list[k].kind = sgn["kind"]
     return tile.to_bytes()
 
 
@@ -252,5 +271,7 @@ def from_capnp_bytes(data: bytes) -> dict:
                                  "kind": str(rb.kind), "radiusM": rb.radiusM} for rb in r.roundabouts],
                 "curves": [{"point": [cv.point.lat, cv.point.lon],
                             "radiusM": cv.radiusM} for cv in r.curves],
+                "signs": [{"point": [sg.point.lat, sg.point.lon],
+                           "kind": str(sg.kind)} for sg in r.signs],
             } for r in tile.roads],
         }

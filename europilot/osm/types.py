@@ -35,6 +35,14 @@ class Curve:
 
 
 @dataclass(frozen=True)
+class Sign:
+    """A stop / give-way sign on a road, at its node."""
+    lat: float
+    lon: float
+    kind: str                   # "stop" | "giveWay"
+
+
+@dataclass(frozen=True)
 class Road:
     id: int
     road_class: str
@@ -54,6 +62,7 @@ class Road:
     cameras: tuple[Camera, ...] = field(default_factory=tuple)
     roundabouts: tuple[Roundabout, ...] = field(default_factory=tuple)
     curves: tuple[Curve, ...] = field(default_factory=tuple)
+    signs: tuple[Sign, ...] = field(default_factory=tuple)
 
 
 @dataclass(frozen=True)
@@ -79,6 +88,8 @@ class Advisory:
     roundabout_radius_m: int = 0                 # ring radius (0 = mini/unknown) -> approach speed
     curve_distance_m: float | None = None        # along-road meters to the next sharp bend ahead
     curve_radius_m: int = 0                       # min turn radius (0 = none) -> cornering speed
+    sign_distance_m: float | None = None          # along-road meters to the next stop/give-way sign
+    sign_kind: str = ""                           # "stop" | "giveWay" | "" (none)
 
     @staticmethod
     def none() -> "Advisory":
