@@ -62,6 +62,7 @@ enum RoundaboutKind {
 struct Roundabout {
   point @0 :Point;   # the entry node where this road meets the roundabout
   kind @1 :RoundaboutKind;
+  radiusM @2 :UInt8;  # ring radius in metres (0 for mini); sizes the approach speed
 }
 
 struct Road {

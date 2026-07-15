@@ -33,6 +33,7 @@ class TestRoundaboutAttachment:
         pts = rb[APPROACH]
         assert len(pts) == 1
         assert pts[0]["kind"] == "roundabout"
+        assert pts[0]["radius_m"] > 0          # ring radius baked from the geometry
         assert abs(pts[0]["lat"] - 52.000) < 1e-9 and abs(pts[0]["lon"] - 5.000) < 1e-9
 
     def test_never_attaches_to_the_ring_itself(self):
@@ -47,6 +48,7 @@ class TestRoundaboutAttachment:
         assert MINI_ROAD in rb
         pts = rb[MINI_ROAD]
         assert len(pts) == 1 and pts[0]["kind"] == "mini"
+        assert pts[0]["radius_m"] == 0         # a mini has no ring geometry
         assert abs(pts[0]["lat"] - 52.005) < 1e-9
 
     def test_no_duplicate_entry_for_the_same_point(self):
@@ -63,7 +65,7 @@ class TestRoundaboutWire:
         # a roundabout-less road must not carry the key -> hash stays as before.
         assert "roundabouts" not in wire.normalize_road(self._record([]))
         assert "roundabouts" in wire.normalize_road(
-            self._record([{"lat": 52.0, "lon": 5.0, "kind": "roundabout"}]))
+            self._record([{"lat": 52.0, "lon": 5.0, "kind": "roundabout", "radius_m": 25}]))
 
     def test_hash_unchanged_for_roundabout_less_tile(self):
         rec = {"id": 1, "coords": [(52.0, 5.0), (52.0, 5.01)]}
@@ -73,10 +75,12 @@ class TestRoundaboutWire:
 
     def test_capnp_round_trip_preserves_roundabouts(self):
         rec = self._record([
-            {"lat": 52.0, "lon": 5.0, "kind": "roundabout"},
-            {"lat": 52.001, "lon": 5.002, "kind": "mini"},
+            {"lat": 52.0, "lon": 5.0, "kind": "roundabout", "radius_m": 30},
+            {"lat": 52.001, "lon": 5.002, "kind": "mini", "radius_m": 0},
         ])
         data = wire.serialize_tile(200, 20, [rec])
         road = wire.from_capnp_bytes(data)["roads"][0]
-        kinds = sorted(rb["kind"] for rb in road["roundabouts"])
-        assert kinds == ["mini", "roundabout"]
+        by_kind = {rb["kind"]: rb for rb in road["roundabouts"]}
+        assert sorted(by_kind) == ["mini", "roundabout"]
+        assert by_kind["roundabout"]["radiusM"] == 30   # radius survives the wire
+        assert by_kind["mini"]["radiusM"] == 0

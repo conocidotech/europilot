@@ -88,6 +88,7 @@ struct MapAdvisory @0xaedffd8f31e7b55d {
   # a comfortable approach speed; there is no posted limit at a roundabout.
   roundaboutDistance @14 :Float32; # along-road meters to it; -1 none ahead
   roundaboutKind @15 :Text;        # "roundabout" | "mini" | "" none
+  roundaboutRadiusM @16 :Int16;    # ring radius in m (0 mini); sizes the approach speed
 
   # Three-valued on purpose: unknown is NOT absent (no tag and no parallel path
   # seen), carried through from the tile so the device never reads silence as

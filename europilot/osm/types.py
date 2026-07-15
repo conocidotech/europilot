@@ -23,6 +23,7 @@ class Roundabout:
     lat: float
     lon: float
     kind: str                   # "roundabout" | "mini"
+    radius_m: int               # ring radius in metres (0 for mini) -> approach speed
 
 
 @dataclass(frozen=True)
@@ -65,6 +66,7 @@ class Advisory:
     camera_kind: str = ""                     # "fixed" | "section" | "" (none)
     roundabout_distance_m: float | None = None  # along-road meters to the next roundabout ahead
     roundabout_kind: str = ""                    # "roundabout" | "mini" | "" (none)
+    roundabout_radius_m: int = 0                 # ring radius (0 = mini/unknown) -> approach speed
 
     @staticmethod
     def none() -> "Advisory":
