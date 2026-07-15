@@ -135,6 +135,21 @@ struct SpeedLimit @0xda96579883444c35 {
   roundaboutTarget @5 :Int16; # km/h to cap cruise at near a roundabout; -1 = no easing
   curveTarget @6 :Int16;      # km/h to cap cruise at near a sharp bend; -1 = no easing
 
+  # Observability (UI + telemetry, never control): the binding advisory ease this
+  # cycle -- the lowest target among the ENABLED toggles, so it reflects what the
+  # planner actually applies.
+  easingReason @7 :EasingReason;
+  easingTarget @8 :Int16;      # km/h the binding ease caps to; -1 = nothing easing
+  easingDistance @9 :Float32;  # m to the trigger; -1 = none / already inside a section
+
+  enum EasingReason {
+    none @0;
+    camera @1;      # approaching a fixed speed camera
+    section @2;     # inside an average-speed section (trajectcontrole)
+    roundabout @3;  # approaching a roundabout
+    curve @4;       # approaching a sharp bend (MTSC)
+  }
+
   # Ordered roughly by authority/currency. Append new sources; never renumber.
   enum Source {
     none @0;

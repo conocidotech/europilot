@@ -77,6 +77,19 @@ def test_telemetry_omits_missing_optional_fields():
     assert f["leads"] == [{"x": 10.0, "y": 0.0}]   # no v / prob keys when absent
 
 
+def test_telemetry_carries_easing_when_present():
+    gps = {"lat": 52.0, "lon": 4.0, "bearing": 0.0, "speed": 0.0}
+    easing = {"reason": "curve", "target_kph": 60, "distance_m": 120.0}
+    f = heartbeat.build_telemetry("d", gps, [], [], easing)
+    assert f["easing"] == easing
+
+
+def test_telemetry_omits_easing_when_absent():
+    gps = {"lat": 52.0, "lon": 4.0, "bearing": 0.0, "speed": 0.0}
+    assert "easing" not in heartbeat.build_telemetry("d", gps, [], [])
+    assert "easing" not in heartbeat.build_telemetry("d", gps, [], [], None)
+
+
 class _Gps:
     def __init__(self, hasFix, lat=52.0, lon=4.0, bearing=90.0, speed=10.0):
         self.hasFix, self.latitude, self.longitude = hasFix, lat, lon

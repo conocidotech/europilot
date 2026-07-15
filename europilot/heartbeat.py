@@ -42,7 +42,7 @@ TELEMETRY_MAX_OBJECTS = 32    # cap leads/tracks per frame (bound payload size)
 # ublox devices publish gpsLocationExternal. The fork's advisory daemons use
 # gpsLocation, so subscribe to both and take whichever has a fix.
 GPS_SERVICES = ["gpsLocation", "gpsLocationExternal"]
-TELEMETRY_SERVICES = [*GPS_SERVICES, "modelV2", "liveTracks", "carState"]
+TELEMETRY_SERVICES = [*GPS_SERVICES, "modelV2", "liveTracks", "carState", "euSpeedLimit"]
 DEVICE_NAME = "Europilot"
 NAME_FILE = "/data/europilot_device_name"   # optional: one line overrides the display name
 
@@ -131,11 +131,13 @@ def _round(v, n=2):
 
 
 def build_telemetry(dongle_id: str, gps: dict | None,
-                    leads: list[dict], tracks: list[dict]) -> dict | None:
+                    leads: list[dict], tracks: list[dict],
+                    easing: dict | None = None) -> dict | None:
     """Assemble a telemetry frame, or None without a usable GPS fix.
 
     Pure/testable: takes already-extracted primitives so it needs no msgq. Object
     lists are capped and NaNs dropped so the wire payload stays small and clean.
+    `easing` (the binding advisory ease) is carried only when actually easing.
     """
     if not dongle_id or not gps:
         return None
@@ -159,7 +161,7 @@ def build_telemetry(dongle_id: str, gps: dict | None,
             out.append(item)
         return out
 
-    return {
+    frame = {
         "dongle_id": dongle_id,
         "lat": lat,
         "lon": lon,
@@ -168,6 +170,9 @@ def build_telemetry(dongle_id: str, gps: dict | None,
         "leads": clean(leads),
         "tracks": clean(tracks),
     }
+    if easing:
+        frame["easing"] = easing
+    return frame
 
 
 def _read_gps(sm) -> dict | None:
@@ -214,7 +219,24 @@ def collect_telemetry(dongle_id: str, sm) -> dict | None:
     except Exception:
         tracks = []
 
-    return build_telemetry(dongle_id, gps, leads, tracks)
+    return build_telemetry(dongle_id, gps, leads, tracks, _read_easing(sm))
+
+
+def _read_easing(sm) -> dict | None:
+    """The binding advisory ease from euSpeedLimit, or None when nothing eases."""
+    try:
+        if not sm.valid.get("euSpeedLimit", False):
+            return None
+        sl = sm["euSpeedLimit"]
+        reason = str(sl.easingReason)
+        if reason == "none" or sl.easingTarget <= 0:
+            return None
+        out = {"reason": reason, "target_kph": int(sl.easingTarget)}
+        if sl.easingDistance >= 1.0:
+            out["distance_m"] = _round(sl.easingDistance, 0)
+        return out
+    except Exception:
+        return None
 
 
 def post_telemetry(host: str, payload: dict) -> None:

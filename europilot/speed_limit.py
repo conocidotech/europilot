@@ -22,6 +22,7 @@ from europilot.advisories import mandatory_speed, advisory_speed
 from europilot.cruise import (
     cruise_target_kph,
     curve_target_kph,
+    resolve_easing,
     roundabout_approach_kph,
     roundabout_target_kph,
     section_hold_kph,
@@ -102,9 +103,19 @@ def main():
 
     from europilot.loopwatch import LoopWatch
 
+    from openpilot.common.params import Params
+
     pm = messaging.PubMaster([SERVICE])
     sm = messaging.SubMaster(["can", "euNdwMatrixSigns", "euMapAdvisory", "carState"])
     rk = Ratekeeper(RATE_HZ, print_delay_threshold=None)
+
+    # Read the opt-in easing toggles once so the published "binding ease" for the
+    # UI/telemetry reflects only what the planner actually applies. These match the
+    # planner's own reads; toggles are set offroad and take effect on restart.
+    params = Params()
+    camera_on = params.get_bool("EuropilotCameraEasing")
+    roundabout_on = params.get_bool("EuropilotRoundaboutEasing")
+    curve_on = params.get_bool("EuropilotCurveEasing")
     watch = LoopWatch("europilot_speedlimitd", budget_s=3.0 / RATE_HZ)
 
     rsa_limit: int | None = None
@@ -209,6 +220,18 @@ def main():
             dat.cruiseTarget = cam_target if cam_target is not None else -1
             dat.roundaboutTarget = rb_target if rb_target is not None else -1
             dat.curveTarget = cv_target if cv_target is not None else -1
+
+            # Observability: the binding ease among the enabled toggles (UI + telemetry).
+            reason, e_target, e_dist = resolve_easing(
+                camera_target=cam_approach, camera_distance_m=cam_distance,
+                section_target=section_cap,
+                roundabout_target=rb_target, roundabout_distance_m=rb_distance,
+                curve_target=cv_target, curve_distance_m=cv_distance,
+                camera_on=camera_on, roundabout_on=roundabout_on, curve_on=curve_on,
+            )
+            dat.easingReason = reason
+            dat.easingTarget = e_target
+            dat.easingDistance = e_dist
             pm.send(SERVICE, m)
         except Exception:
             cloudlog.exception("europilot_speedlimitd iteration failed; publishing fail-closed")

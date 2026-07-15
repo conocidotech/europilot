@@ -127,6 +127,43 @@ def roundabout_target_kph(*, roundabout_distance_m: float | None, v_ego_kph: flo
     return None
 
 
+# Easing reasons -- match the euSpeedLimit.EasingReason enum names exactly.
+EASING_NONE = "none"
+EASING_CAMERA = "camera"
+EASING_SECTION = "section"
+EASING_ROUNDABOUT = "roundabout"
+EASING_CURVE = "curve"
+
+
+def resolve_easing(*, camera_target: int | None, camera_distance_m: float | None,
+                   section_target: int | None,
+                   roundabout_target: int | None, roundabout_distance_m: float | None,
+                   curve_target: int | None, curve_distance_m: float | None,
+                   camera_on: bool, roundabout_on: bool, curve_on: bool
+                   ) -> tuple[str, int, float]:
+    """The binding advisory ease this cycle, for the UI + telemetry.
+
+    Considers only the ENABLED sources (so the display matches what the planner
+    actually applies), and picks the LOWEST target -- that is the ease that binds
+    cruise. Returns (reason, target_kph, distance_m); (EASING_NONE, -1, -1.0)
+    when nothing eases. Observability only -- never feeds control.
+    """
+    cands: list[tuple[str, int, float | None]] = []
+    if camera_on:
+        if camera_target is not None:
+            cands.append((EASING_CAMERA, camera_target, camera_distance_m))
+        if section_target is not None:
+            cands.append((EASING_SECTION, section_target, None))   # inside it; no distance
+    if roundabout_on and roundabout_target is not None:
+        cands.append((EASING_ROUNDABOUT, roundabout_target, roundabout_distance_m))
+    if curve_on and curve_target is not None:
+        cands.append((EASING_CURVE, curve_target, curve_distance_m))
+    if not cands:
+        return (EASING_NONE, -1, -1.0)
+    reason, target, dist = min(cands, key=lambda c: c[1])
+    return (reason, int(target), float(dist) if dist is not None and dist >= 0 else -1.0)
+
+
 def curve_speed_kph(radius_m: int) -> int:
     """Comfortable cornering speed for a bend of a given radius (km/h).
 
