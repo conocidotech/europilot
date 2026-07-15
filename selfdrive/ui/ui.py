@@ -4,7 +4,7 @@ import time
 
 from cereal import messaging
 from openpilot.system.hardware import TICI
-from openpilot.common.realtime import Priority, config_realtime_process, set_core_affinity
+from openpilot.common.realtime import set_core_affinity
 from openpilot.system.ui.lib.application import gui_app
 from openpilot.selfdrive.ui.layouts.main import MainLayout
 from openpilot.selfdrive.ui.mici.layouts.main import MiciMainLayout
@@ -14,9 +14,16 @@ BIG_UI = gui_app.big_ui()
 
 
 def main():
-  cores = {5, }
-  # above plannerd and radard
-  config_realtime_process(0, Priority.CTRL_HIGH)
+  # The UI runs at normal (SCHED_OTHER) scheduling on its own core and must
+  # never preempt the driving stack. It used to grab RT SCHED_FIFO priority 53
+  # ("above plannerd and radard"): once the mici UI got heavy, a single render
+  # frame would preempt locationd/paramsd/plannerd/radard mid-loop, so they
+  # missed their deadlines and published valid=False -- a cascade selfdrived
+  # reports as commIssue ("TAKE CONTROL IMMEDIATELY"). Every driving process is
+  # SCHED_FIFO and rightfully preempts us now. Core 6 is free of the
+  # control (4), planner (5), model (7) and locationd (0-3) processes.
+  cores = {6, }
+  set_core_affinity(list(cores))
 
   gui_app.init_window("UI")
   if BIG_UI:
