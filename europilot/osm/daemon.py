@@ -54,6 +54,8 @@ def advisory_to_fields(a: Advisory) -> dict:
         "roundaboutDistance": a.roundabout_distance_m if a.roundabout_distance_m is not None else -1.0,
         "roundaboutKind": a.roundabout_kind or "",
         "roundaboutRadiusM": a.roundabout_radius_m or 0,
+        "curveDistance": a.curve_distance_m if a.curve_distance_m is not None else -1.0,
+        "curveRadiusM": a.curve_radius_m or 0,
     }
 
 

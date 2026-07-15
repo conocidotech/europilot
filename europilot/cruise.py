@@ -4,7 +4,8 @@ Pure decision logic: given what's ahead (from euMapAdvisory) and the ego speed,
 decide the km/h to cap the ACC set speed at, or None (no easing). Two triggers,
 each opt-in and each a gentle ease-off:
   - a speed camera / trajectcontrole -> ease toward the enforced limit;
-  - a roundabout -> ease toward a comfortable roundabout speed.
+  - a roundabout -> ease toward a comfortable roundabout speed;
+  - a sharp bend (MTSC) -> ease toward a comfortable cornering speed.
 europilot/speed_limit.py takes the lower of the two and publishes it as
 euSpeedLimit.cruiseTarget; the longitudinal planner caps cruise to it with a
 min() when the relevant opt-in toggle is on and openpilot is engaged.
@@ -18,6 +19,8 @@ Design (kept safe and boring):
     the MPC, which clips any target to a comfort deceleration -- so this can only
     ever produce a gentle ease-off, never a hard brake.
 """
+
+import math
 
 # Gentle target deceleration used only to decide WHEN to start easing. The MPC
 # does the real braking and caps it harder (~1.2 m/s2), so this stays a taper.
@@ -36,6 +39,13 @@ ROUNDABOUT_SMALL_KPH = 20           # smallest ringed roundabout
 ROUNDABOUT_LARGE_KPH = 50           # large multi-lane roundabout
 ROUNDABOUT_SMALL_RADIUS_M = 10.0    # at/below this radius -> SMALL
 ROUNDABOUT_LARGE_RADIUS_M = 35.0    # at/above this radius -> LARGE
+
+# Map Turn Speed Control (MTSC): comfortable cornering speed for a bend of radius
+# R is v = sqrt(a_lat * R). a_lat is a gentle lateral accel; the MPC still clips
+# the longitudinal taper, so this only sets the target speed, not the braking.
+CURVE_LAT_ACCEL_MS2 = 1.8           # comfortable lateral acceleration through a bend
+CURVE_MIN_KPH = 20                  # never advise crawling below this for a bend
+CURVE_MAX_KPH = 120                 # above this a bend is gentle enough to ignore
 
 
 def roundabout_approach_kph(kind: str, radius_m: int) -> int:
@@ -99,4 +109,38 @@ def roundabout_target_kph(*, roundabout_distance_m: float | None, v_ego_kph: flo
         return None
     if roundabout_distance_m <= easing_distance_m(v_ego_kph, comfort_kph):
         return comfort_kph
+    return None
+
+
+def curve_speed_kph(radius_m: int) -> int:
+    """Comfortable cornering speed for a bend of a given radius (km/h).
+
+    v = sqrt(a_lat * R), clamped to a sane band and rounded to 5 km/h. 0 (no
+    radius) means "no curve" -> no easing. Device-side policy, so a_lat can be
+    tuned without re-baking tiles.
+    """
+    if not radius_m or radius_m <= 0:
+        return 0
+    v_kph = math.sqrt(CURVE_LAT_ACCEL_MS2 * radius_m) * 3.6
+    v_kph = max(float(CURVE_MIN_KPH), min(float(CURVE_MAX_KPH), v_kph))
+    return int(round(v_kph / 5.0)) * 5
+
+
+def curve_target_kph(*, curve_distance_m: float | None, curve_radius_m: int,
+                     v_ego_kph: float) -> int | None:
+    """km/h to cap cruise at approaching a sharp bend, or None for no easing.
+
+    Same shape and safety as roundabout_target_kph: only ever lowers, fires only
+    for a bend AHEAD (the matcher's job) within a bounded distance and only if
+    we're above the comfortable cornering speed, and starts at the last
+    comfortable moment so the MPC's comfort-clipped taper does the actual slowing.
+    """
+    if (curve_distance_m is None or curve_distance_m < 0
+            or curve_distance_m > MAX_TRIGGER_M):
+        return None
+    comfort = curve_speed_kph(curve_radius_m)
+    if comfort <= 0 or v_ego_kph <= comfort + SPEED_HYSTERESIS_KPH:
+        return None
+    if curve_distance_m <= easing_distance_m(v_ego_kph, comfort):
+        return comfort
     return None

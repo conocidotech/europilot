@@ -42,6 +42,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"ExperimentalModeConfirmed", {PERSISTENT, BOOL}},
     {"EuropilotCameraEasing", {PERSISTENT, BOOL}},  // opt-in: ease cruise near speed cameras
     {"EuropilotRoundaboutEasing", {PERSISTENT, BOOL}},  // opt-in: ease cruise approaching roundabouts
+    {"EuropilotCurveEasing", {PERSISTENT, BOOL}},  // opt-in: ease cruise approaching sharp bends (MTSC)
     {"FirmwareQueryDone", {CLEAR_ON_MANAGER_START | CLEAR_ON_ONROAD_TRANSITION, BOOL}},
     {"ForcePowerDown", {PERSISTENT, BOOL}},
     {"GitBranch", {PERSISTENT, STRING}},

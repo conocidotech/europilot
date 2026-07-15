@@ -65,6 +65,14 @@ struct Roundabout {
   radiusM @2 :UInt8;  # ring radius in metres (0 for mini); sizes the approach speed
 }
 
+# A sharp bend on THIS road (gateway/osm/curves.py). Advisory only: the device
+# eases toward a cornering speed sized by the radius. One marker per bend, placed
+# at the bend's tightest point.
+struct Curve {
+  point @0 :Point;     # the tightest point of the bend, on this road
+  radiusM @1 :UInt16;  # min turn radius in metres; sizes the cornering speed
+}
+
 struct Road {
   id @0 :UInt64;
   roadClass @1 :RoadClass;
@@ -89,6 +97,9 @@ struct Road {
 
   # roundabouts entered from THIS road (gateway/osm/roundabouts.py)
   roundabouts @16 :List(Roundabout);
+
+  # sharp bends on THIS road (gateway/osm/curves.py)
+  curves @17 :List(Curve);
 }
 
 struct MapTile {

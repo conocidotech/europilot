@@ -19,7 +19,12 @@ Merge-safe: this file is new and does not modify upstream openpilot logic.
 
 from europilot.rsa import speed_limit_from_can, RSA1_ADDR
 from europilot.advisories import mandatory_speed, advisory_speed
-from europilot.cruise import cruise_target_kph, roundabout_approach_kph, roundabout_target_kph
+from europilot.cruise import (
+    cruise_target_kph,
+    curve_target_kph,
+    roundabout_approach_kph,
+    roundabout_target_kph,
+)
 
 RATE_HZ = 5.0
 SERVICE = "euSpeedLimit"
@@ -134,6 +139,8 @@ def main():
             rb_distance = None
             rb_kind = ""
             rb_radius = 0
+            cv_distance = None
+            cv_radius = 0
             if sm.valid["euMapAdvisory"] and sm.recv_frame["euMapAdvisory"] > 0:
                 adv = sm["euMapAdvisory"]
                 if adv.valid:
@@ -147,6 +154,9 @@ def main():
                         rb_distance = adv.roundaboutDistance
                         rb_kind = adv.roundaboutKind
                         rb_radius = adv.roundaboutRadiusM if adv.roundaboutRadiusM > 0 else 0
+                    if adv.curveDistance >= 0:
+                        cv_distance = adv.curveDistance
+                        cv_radius = adv.curveRadiusM if adv.curveRadiusM > 0 else 0
 
             limit, source = fuse_speed_limit(
                 ndw_mandatory=mandatory_speed(signs),
@@ -174,6 +184,11 @@ def main():
                 roundabout_distance_m=rb_distance, v_ego_kph=v_ego_kph,
                 comfort_kph=rb_comfort,
             )
+            # Ease toward a comfortable cornering speed approaching a sharp bend.
+            cv_target = curve_target_kph(
+                curve_distance_m=cv_distance, curve_radius_m=cv_radius,
+                v_ego_kph=v_ego_kph,
+            )
 
             m = messaging.new_message(SERVICE)
             dat = m.euSpeedLimit
@@ -183,6 +198,7 @@ def main():
             dat.source = source
             dat.cruiseTarget = cam_target if cam_target is not None else -1
             dat.roundaboutTarget = rb_target if rb_target is not None else -1
+            dat.curveTarget = cv_target if cv_target is not None else -1
             pm.send(SERVICE, m)
         except Exception:
             cloudlog.exception("europilot_speedlimitd iteration failed; publishing fail-closed")

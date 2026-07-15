@@ -67,6 +67,7 @@ class LongitudinalPlanner:
     # Europilot: opt-in approach cruise easing (off by default). Read once.
     self._eu_camera_easing = Params().get_bool("EuropilotCameraEasing")
     self._eu_roundabout_easing = Params().get_bool("EuropilotRoundaboutEasing")
+    self._eu_curve_easing = Params().get_bool("EuropilotCurveEasing")
 
   @staticmethod
   def parse_model(model_msg):
@@ -147,6 +148,10 @@ class LongitudinalPlanner:
       if (self._eu_roundabout_easing and sm['euSpeedLimit'].roundaboutTarget > 0
           and not sm['carState'].steeringPressed):
         v_cruise = min(v_cruise, sm['euSpeedLimit'].roundaboutTarget * CV.KPH_TO_MS)
+      # Curve easing (MTSC) likewise yields to the driver steering through the bend.
+      if (self._eu_curve_easing and sm['euSpeedLimit'].curveTarget > 0
+          and not sm['carState'].steeringPressed):
+        v_cruise = min(v_cruise, sm['euSpeedLimit'].curveTarget * CV.KPH_TO_MS)
 
     self.mpc.set_weights(prev_accel_constraint, personality=sm['selfdriveState'].personality)
     self.mpc.set_cur_state(self.v_desired_filter.x, self.a_desired)

@@ -27,6 +27,14 @@ class Roundabout:
 
 
 @dataclass(frozen=True)
+class Curve:
+    """A sharp bend on a road, at its tightest point."""
+    lat: float
+    lon: float
+    radius_m: int               # min turn radius in metres -> cornering speed
+
+
+@dataclass(frozen=True)
 class Road:
     id: int
     road_class: str
@@ -45,6 +53,7 @@ class Road:
     comfort_speed: int | None   # advisory km/h, None to defer to posted
     cameras: tuple[Camera, ...] = field(default_factory=tuple)
     roundabouts: tuple[Roundabout, ...] = field(default_factory=tuple)
+    curves: tuple[Curve, ...] = field(default_factory=tuple)
 
 
 @dataclass(frozen=True)
@@ -67,6 +76,8 @@ class Advisory:
     roundabout_distance_m: float | None = None  # along-road meters to the next roundabout ahead
     roundabout_kind: str = ""                    # "roundabout" | "mini" | "" (none)
     roundabout_radius_m: int = 0                 # ring radius (0 = mini/unknown) -> approach speed
+    curve_distance_m: float | None = None        # along-road meters to the next sharp bend ahead
+    curve_radius_m: int = 0                       # min turn radius (0 = none) -> cornering speed
 
     @staticmethod
     def none() -> "Advisory":

@@ -45,6 +45,11 @@ def _u8(value) -> int:
     return min(255, max(0, int(value or 0)))
 
 
+def _u16(value) -> int:
+    """Clamp an optional metric (e.g. a curve radius) to UInt16; None/0 -> 0."""
+    return min(65535, max(0, int(value or 0)))
+
+
 def normalize_camera(cam: dict) -> dict:
     """Canonical, wire-ready form of one camera (point scaled, kind -> enum)."""
     return {
@@ -60,6 +65,14 @@ def normalize_roundabout(rb: dict) -> dict:
         "point": [_scale(rb["lat"]), _scale(rb["lon"])],
         "kind": _ROUNDABOUT_KIND_ENUM.get(rb.get("kind"), "roundabout"),
         "radiusM": _u8(rb.get("radius_m")),
+    }
+
+
+def normalize_curve(cv: dict) -> dict:
+    """Canonical, wire-ready form of one curve marker (point scaled, radius u16)."""
+    return {
+        "point": [_scale(cv["lat"]), _scale(cv["lon"])],
+        "radiusM": _u16(cv.get("radius_m")),
     }
 
 
@@ -95,6 +108,10 @@ def normalize_road(rec: dict) -> dict:
     roundabouts = [normalize_roundabout(r) for r in rec.get("roundabouts", [])]
     if roundabouts:
         road["roundabouts"] = sorted(roundabouts, key=lambda r: (r["point"][0], r["point"][1], r["kind"]))
+    # Same "only when present" rule so a curve-less tile hashes exactly as before.
+    curves = [normalize_curve(c) for c in rec.get("curves", [])]
+    if curves:
+        road["curves"] = sorted(curves, key=lambda c: (c["point"][0], c["point"][1], c["radiusM"]))
     return road
 
 
@@ -182,6 +199,12 @@ def to_capnp_bytes(norm: dict, *, generated_at_unix_s: int = 0) -> bytes:
             rb_list[k].point.lon = rbn["point"][1]
             rb_list[k].kind = rbn["kind"]
             rb_list[k].radiusM = rbn["radiusM"]
+        cvs = rn.get("curves", [])
+        cv_list = r.init("curves", len(cvs))
+        for k, cvn in enumerate(cvs):
+            cv_list[k].point.lat = cvn["point"][0]
+            cv_list[k].point.lon = cvn["point"][1]
+            cv_list[k].radiusM = cvn["radiusM"]
     return tile.to_bytes()
 
 
@@ -227,5 +250,7 @@ def from_capnp_bytes(data: bytes) -> dict:
                              "maxspeed": c.maxspeed, "kind": str(c.kind)} for c in r.cameras],
                 "roundabouts": [{"point": [rb.point.lat, rb.point.lon],
                                  "kind": str(rb.kind), "radiusM": rb.radiusM} for rb in r.roundabouts],
+                "curves": [{"point": [cv.point.lat, cv.point.lon],
+                            "radiusM": cv.radiusM} for cv in r.curves],
             } for r in tile.roads],
         }

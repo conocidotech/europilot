@@ -90,6 +90,11 @@ struct MapAdvisory @0xaedffd8f31e7b55d {
   roundaboutKind @15 :Text;        # "roundabout" | "mini" | "" none
   roundaboutRadiusM @16 :Int16;    # ring radius in m (0 mini); sizes the approach speed
 
+  # Next sharp bend ahead on the matched road (advisory). MTSC: the device eases
+  # toward a comfortable cornering speed sized by the bend radius.
+  curveDistance @17 :Float32;  # along-road meters to it; -1 none ahead
+  curveRadiusM @18 :Int16;     # min turn radius in m (0 none); sizes the cornering speed
+
   # Three-valued on purpose: unknown is NOT absent (no tag and no parallel path
   # seen), carried through from the tile so the device never reads silence as
   # "no bike path here".
@@ -124,6 +129,7 @@ struct SpeedLimit @0xda96579883444c35 {
   source @3 :Source;
   cruiseTarget @4 :Int16;     # km/h to cap cruise at near a camera; -1 = no easing
   roundaboutTarget @5 :Int16; # km/h to cap cruise at near a roundabout; -1 = no easing
+  curveTarget @6 :Int16;      # km/h to cap cruise at near a sharp bend; -1 = no easing
 
   # Ordered roughly by authority/currency. Append new sources; never renumber.
   enum Source {
