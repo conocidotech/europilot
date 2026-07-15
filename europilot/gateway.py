@@ -25,6 +25,7 @@ europilot/ndw/types.py.
 Merge-safe: this file is new and does not modify upstream openpilot logic.
 """
 
+from europilot.gps import GpsHealth, read_pose
 from europilot.ndw.client import MatrixSignClient
 from europilot.ndw.types import Gantry
 
@@ -74,10 +75,11 @@ def main():
     from europilot.loopwatch import LoopWatch
 
     pm = messaging.PubMaster([SERVICE])
-    sm = messaging.SubMaster(["gpsLocation"])
+    sm = messaging.SubMaster(["gpsLocation", "gpsLocationExternal"])
     client = MatrixSignClient()
     rk = Ratekeeper(RATE_HZ, print_delay_threshold=None)
     watch = LoopWatch("europilotd", budget_s=3.0 / RATE_HZ)
+    gps_health = GpsHealth()
 
     # An advisory daemon must never take the process down: a crash here is a
     # monitored-process fault that soft-disables openpilot. So the whole loop
@@ -90,10 +92,13 @@ def main():
 
             match = None
             age = None
-            if sm.valid["gpsLocation"] and sm.recv_frame["gpsLocation"] > 0:
-                gps = sm["gpsLocation"]
-                client.poll(gps.latitude, gps.longitude)  # cold path, non-blocking
-                match = client.match(gps.latitude, gps.longitude, gps.bearingDeg)
+            pose = read_pose(sm)   # best fixed pose across both GNSS sources, or None
+            note = gps_health.transition(pose)
+            if note:
+                (cloudlog.info if pose else cloudlog.warning)(note)
+            if pose is not None:
+                client.poll(pose.lat, pose.lon)  # cold path, non-blocking
+                match = client.match(pose.lat, pose.lon, pose.bearing)
                 age = client.age_s()
 
             msg = messaging.new_message(SERVICE)

@@ -10,6 +10,7 @@ the fusion simply falls back to its other sources. Merge-safe: new file, no
 change to upstream openpilot logic.
 """
 
+from europilot.gps import GpsHealth, read_pose
 from europilot.osm.client import OsmTileClient
 from europilot.osm.types import Advisory
 
@@ -73,9 +74,10 @@ def main():
 
     client = OsmTileClient()
     pm = messaging.PubMaster([SERVICE])
-    sm = messaging.SubMaster(["gpsLocation"])
+    sm = messaging.SubMaster(["gpsLocation", "gpsLocationExternal"])
     rk = Ratekeeper(RATE_HZ, print_delay_threshold=None)
     watch = LoopWatch("europilot_osmd", budget_s=3.0 / RATE_HZ)
+    gps_health = GpsHealth()
 
     # Advisory-only: a crash here would soft-disable openpilot, so guard the
     # whole body and degrade to a fail-closed heartbeat instead.
@@ -85,10 +87,13 @@ def main():
             sm.update(0)
 
             advisory = Advisory.none()
-            if sm.valid["gpsLocation"] and sm.recv_frame["gpsLocation"] > 0:
-                gps = sm["gpsLocation"]
-                client.poll(gps.latitude, gps.longitude)   # cold path, non-blocking
-                advisory = client.match(gps.latitude, gps.longitude, gps.bearingDeg)
+            pose = read_pose(sm)   # best fixed pose across both GNSS sources, or None
+            note = gps_health.transition(pose)
+            if note:
+                (cloudlog.info if pose else cloudlog.warning)(note)
+            if pose is not None:
+                client.poll(pose.lat, pose.lon)   # cold path, non-blocking
+                advisory = client.match(pose.lat, pose.lon, pose.bearing)
 
             m = messaging.new_message(SERVICE)
             dat = m.euMapAdvisory
