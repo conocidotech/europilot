@@ -134,6 +134,7 @@ struct SpeedLimit @0xda96579883444c35 {
   cruiseTarget @4 :Int16;     # km/h to cap cruise at near a camera; -1 = no easing
   roundaboutTarget @5 :Int16; # km/h to cap cruise at near a roundabout; -1 = no easing
   curveTarget @6 :Int16;      # km/h to cap cruise at near a sharp bend; -1 = no easing
+  comfortTarget @10 :Int16;   # km/h to cap cruise at on a calm residential road; -1 = no easing
 
   # Observability (UI + telemetry, never control): the binding advisory ease this
   # cycle -- the lowest target among the ENABLED toggles, so it reflects what the
@@ -148,6 +149,7 @@ struct SpeedLimit @0xda96579883444c35 {
     section @2;     # inside an average-speed section (trajectcontrole)
     roundabout @3;  # approaching a roundabout
     curve @4;       # approaching a sharp bend (MTSC)
+    comfort @5;     # on a calm residential road (comfort speed)
   }
 
   # Ordered roughly by authority/currency. Append new sources; never renumber.

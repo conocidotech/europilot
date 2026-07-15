@@ -108,6 +108,19 @@ def section_hold_kph(section_limit: int | None) -> int | None:
     return int(section_limit)
 
 
+def comfort_hold_kph(comfort_speed: int | None) -> int | None:
+    """km/h to cap cruise at on a calm residential road (advisory comfort speed).
+
+    The gateway derives comfort_speed from the road's residential character (speed
+    bumps, crossings, living-street, low limit) -- see gateway comfort_speed(). Like
+    a section it's a continuous road-wide cap, not a point, so we hold it while on
+    the road (the planner min()s, the MPC tapers). None when the road has none.
+    """
+    if not comfort_speed or comfort_speed <= 0:
+        return None
+    return int(comfort_speed)
+
+
 def roundabout_target_kph(*, roundabout_distance_m: float | None, v_ego_kph: float,
                           comfort_kph: int = ROUNDABOUT_MINI_KPH) -> int | None:
     """km/h to cap cruise at approaching a roundabout, or None for no easing.
@@ -133,13 +146,16 @@ EASING_CAMERA = "camera"
 EASING_SECTION = "section"
 EASING_ROUNDABOUT = "roundabout"
 EASING_CURVE = "curve"
+EASING_COMFORT = "comfort"
 
 
 def resolve_easing(*, camera_target: int | None, camera_distance_m: float | None,
                    section_target: int | None,
                    roundabout_target: int | None, roundabout_distance_m: float | None,
                    curve_target: int | None, curve_distance_m: float | None,
-                   camera_on: bool, roundabout_on: bool, curve_on: bool
+                   comfort_target: int | None = None,
+                   camera_on: bool, roundabout_on: bool, curve_on: bool,
+                   comfort_on: bool = False
                    ) -> tuple[str, int, float]:
     """The binding advisory ease this cycle, for the UI + telemetry.
 
@@ -158,6 +174,8 @@ def resolve_easing(*, camera_target: int | None, camera_distance_m: float | None
         cands.append((EASING_ROUNDABOUT, roundabout_target, roundabout_distance_m))
     if curve_on and curve_target is not None:
         cands.append((EASING_CURVE, curve_target, curve_distance_m))
+    if comfort_on and comfort_target is not None:
+        cands.append((EASING_COMFORT, comfort_target, None))   # road-wide; no distance
     if not cands:
         return (EASING_NONE, -1, -1.0)
     reason, target, dist = min(cands, key=lambda c: c[1])

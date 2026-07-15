@@ -20,6 +20,7 @@ Merge-safe: this file is new and does not modify upstream openpilot logic.
 from europilot.rsa import speed_limit_from_can, RSA1_ADDR
 from europilot.advisories import mandatory_speed, advisory_speed
 from europilot.cruise import (
+    comfort_hold_kph,
     cruise_target_kph,
     curve_target_kph,
     resolve_easing,
@@ -116,6 +117,7 @@ def main():
     camera_on = params.get_bool("EuropilotCameraEasing")
     roundabout_on = params.get_bool("EuropilotRoundaboutEasing")
     curve_on = params.get_bool("EuropilotCurveEasing")
+    comfort_on = params.get_bool("EuropilotComfortEasing")
     watch = LoopWatch("europilot_speedlimitd", budget_s=3.0 / RATE_HZ)
 
     rsa_limit: int | None = None
@@ -149,6 +151,7 @@ def main():
             cam_distance = None
             cam_limit = None
             section_limit = 0
+            comfort_speed = 0
             rb_distance = None
             rb_kind = ""
             rb_radius = 0
@@ -165,6 +168,8 @@ def main():
                         cam_limit = adv.cameraLimit if adv.cameraLimit > 0 else None
                     if adv.sectionLimit > 0:
                         section_limit = adv.sectionLimit
+                    if adv.comfortSpeed > 0:
+                        comfort_speed = adv.comfortSpeed
                     if adv.roundaboutDistance >= 0:
                         rb_distance = adv.roundaboutDistance
                         rb_kind = adv.roundaboutKind
@@ -210,6 +215,8 @@ def main():
                 curve_distance_m=cv_distance, curve_radius_m=cv_radius,
                 v_ego_kph=v_ego_kph,
             )
+            # Hold a comfortable speed on a calm residential road (road-wide cap).
+            comfort_target = comfort_hold_kph(comfort_speed)
 
             m = messaging.new_message(SERVICE)
             dat = m.euSpeedLimit
@@ -220,6 +227,7 @@ def main():
             dat.cruiseTarget = cam_target if cam_target is not None else -1
             dat.roundaboutTarget = rb_target if rb_target is not None else -1
             dat.curveTarget = cv_target if cv_target is not None else -1
+            dat.comfortTarget = comfort_target if comfort_target is not None else -1
 
             # Observability: the binding ease among the enabled toggles (UI + telemetry).
             reason, e_target, e_dist = resolve_easing(
@@ -227,7 +235,9 @@ def main():
                 section_target=section_cap,
                 roundabout_target=rb_target, roundabout_distance_m=rb_distance,
                 curve_target=cv_target, curve_distance_m=cv_distance,
+                comfort_target=comfort_target,
                 camera_on=camera_on, roundabout_on=roundabout_on, curve_on=curve_on,
+                comfort_on=comfort_on,
             )
             dat.easingReason = reason
             dat.easingTarget = e_target

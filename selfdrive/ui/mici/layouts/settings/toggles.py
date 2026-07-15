@@ -21,6 +21,7 @@ class TogglesLayoutMici(NavScroller):
     easing_camera = BigParamControl("camera & section easing", "EuropilotCameraEasing", toggle_callback=restart_needed_callback)
     easing_roundabout = BigParamControl("roundabout easing", "EuropilotRoundaboutEasing", toggle_callback=restart_needed_callback)
     easing_curve = BigParamControl("curve easing", "EuropilotCurveEasing", toggle_callback=restart_needed_callback)
+    easing_comfort = BigParamControl("residential comfort easing", "EuropilotComfortEasing", toggle_callback=restart_needed_callback)
     is_metric_toggle = BigParamControl("use metric units", "IsMetric")
     ldw_toggle = BigParamControl("lane departure warnings", "IsLdwEnabled")
     always_on_dm_toggle = BigParamControl("always-on driver monitor", "AlwaysOnDM")
@@ -34,6 +35,7 @@ class TogglesLayoutMici(NavScroller):
       easing_camera,
       easing_roundabout,
       easing_curve,
+      easing_comfort,
       is_metric_toggle,
       ldw_toggle,
       always_on_dm_toggle,
@@ -48,6 +50,7 @@ class TogglesLayoutMici(NavScroller):
       ("EuropilotCameraEasing", easing_camera),
       ("EuropilotRoundaboutEasing", easing_roundabout),
       ("EuropilotCurveEasing", easing_curve),
+      ("EuropilotComfortEasing", easing_comfort),
       ("IsMetric", is_metric_toggle),
       ("IsLdwEnabled", ldw_toggle),
       ("AlwaysOnDM", always_on_dm_toggle),

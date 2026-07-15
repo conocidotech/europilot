@@ -22,6 +22,7 @@ _LABELS = {
   "section": "trajectcontrole",
   "roundabout": "rotonde",
   "curve": "bocht",
+  "comfort": "comfort",
 }
 
 _PAD_X = 30
