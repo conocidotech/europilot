@@ -15,6 +15,12 @@ class TogglesLayoutMici(NavScroller):
 
     self._personality_toggle = BigMultiParamToggle("driving personality", "LongitudinalPersonality", ["aggressive", "standard", "relaxed"])
     self._experimental_btn = BigParamControl("experimental mode", "ExperimentalMode")
+    # Europilot advisory easing (opt-in). Read once at process start, so a change
+    # takes effect on the next drive -> flag a restart. Section-hold (trajectcontrole)
+    # rides along with the camera toggle.
+    easing_camera = BigParamControl("camera & section easing", "EuropilotCameraEasing", toggle_callback=restart_needed_callback)
+    easing_roundabout = BigParamControl("roundabout easing", "EuropilotRoundaboutEasing", toggle_callback=restart_needed_callback)
+    easing_curve = BigParamControl("curve easing", "EuropilotCurveEasing", toggle_callback=restart_needed_callback)
     is_metric_toggle = BigParamControl("use metric units", "IsMetric")
     ldw_toggle = BigParamControl("lane departure warnings", "IsLdwEnabled")
     always_on_dm_toggle = BigParamControl("always-on driver monitor", "AlwaysOnDM")
@@ -25,6 +31,9 @@ class TogglesLayoutMici(NavScroller):
     self._scroller.add_widgets([
       self._personality_toggle,
       self._experimental_btn,
+      easing_camera,
+      easing_roundabout,
+      easing_curve,
       is_metric_toggle,
       ldw_toggle,
       always_on_dm_toggle,
@@ -36,6 +45,9 @@ class TogglesLayoutMici(NavScroller):
     # Toggle lists
     self._refresh_toggles = (
       ("ExperimentalMode", self._experimental_btn),
+      ("EuropilotCameraEasing", easing_camera),
+      ("EuropilotRoundaboutEasing", easing_roundabout),
+      ("EuropilotCurveEasing", easing_curve),
       ("IsMetric", is_metric_toggle),
       ("IsLdwEnabled", ldw_toggle),
       ("AlwaysOnDM", always_on_dm_toggle),
