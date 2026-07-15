@@ -3,7 +3,9 @@
 Pure decision logic: given what's ahead (from euMapAdvisory) and the ego speed,
 decide the km/h to cap the ACC set speed at, or None (no easing). Two triggers,
 each opt-in and each a gentle ease-off:
-  - a speed camera / trajectcontrole -> ease toward the enforced limit;
+  - a speed camera -> ease toward the enforced limit as you approach it;
+  - an average-speed section (trajectcontrole) -> HOLD the enforced limit for
+    the whole section, since it is enforced on the average, not at a point;
   - a roundabout -> ease toward a comfortable roundabout speed;
   - a sharp bend (MTSC) -> ease toward a comfortable cornering speed.
 europilot/speed_limit.py takes the lower of the two and publishes it as
@@ -91,6 +93,19 @@ def cruise_target_kph(*, camera_distance_m: float | None, camera_limit: int | No
     if camera_distance_m <= easing_distance_m(v_ego_kph, limit):
         return limit
     return None
+
+
+def section_hold_kph(section_limit: int | None) -> int | None:
+    """km/h to cap cruise at while INSIDE an average-speed section (trajectcontrole).
+
+    Unlike a fixed camera this is NOT distance-gated: the section is enforced on
+    the average over its whole length, so once inside we hold the cap the entire
+    way (the planner min()s it and the MPC still tapers the entry). Returns the
+    enforced limit, or None when not in a section / limit unknown.
+    """
+    if not section_limit or section_limit <= 0:
+        return None
+    return int(section_limit)
 
 
 def roundabout_target_kph(*, roundabout_distance_m: float | None, v_ego_kph: float,

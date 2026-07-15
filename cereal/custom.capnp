@@ -95,6 +95,10 @@ struct MapAdvisory @0xaedffd8f31e7b55d {
   curveDistance @17 :Float32;  # along-road meters to it; -1 none ahead
   curveRadiusM @18 :Int16;     # min turn radius in m (0 none); sizes the cornering speed
 
+  # Average-speed section (trajectcontrole): >0 == we are INSIDE a section on the
+  # matched road, holding at this enforced km/h; -1 == not in a section.
+  sectionLimit @19 :Int16;
+
   # Three-valued on purpose: unknown is NOT absent (no tag and no parallel path
   # seen), carried through from the tile so the device never reads silence as
   # "no bike path here".

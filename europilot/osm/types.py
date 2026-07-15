@@ -73,6 +73,7 @@ class Advisory:
     camera_distance_m: float | None = None   # along-road meters to the next camera ahead
     camera_limit: int | None = None          # enforced km/h there, None if unknown
     camera_kind: str = ""                     # "fixed" | "section" | "" (none)
+    section_limit: int = 0                    # enforced km/h if INSIDE an avg-speed section, 0 if not
     roundabout_distance_m: float | None = None  # along-road meters to the next roundabout ahead
     roundabout_kind: str = ""                    # "roundabout" | "mini" | "" (none)
     roundabout_radius_m: int = 0                 # ring radius (0 = mini/unknown) -> approach speed

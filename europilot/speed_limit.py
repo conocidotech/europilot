@@ -24,6 +24,7 @@ from europilot.cruise import (
     curve_target_kph,
     roundabout_approach_kph,
     roundabout_target_kph,
+    section_hold_kph,
 )
 
 RATE_HZ = 5.0
@@ -136,6 +137,7 @@ def main():
             road_class = ""
             cam_distance = None
             cam_limit = None
+            section_limit = 0
             rb_distance = None
             rb_kind = ""
             rb_radius = 0
@@ -150,6 +152,8 @@ def main():
                     if adv.cameraDistance >= 0:
                         cam_distance = adv.cameraDistance
                         cam_limit = adv.cameraLimit if adv.cameraLimit > 0 else None
+                    if adv.sectionLimit > 0:
+                        section_limit = adv.sectionLimit
                     if adv.roundaboutDistance >= 0:
                         rb_distance = adv.roundaboutDistance
                         rb_kind = adv.roundaboutKind
@@ -171,10 +175,16 @@ def main():
             # Published as two independent targets so each opt-in toggle in the
             # planner gates its own. -1 means no easing from that source this cycle.
             v_ego_kph = sm["carState"].vEgo * 3.6 if sm.valid["carState"] else 0.0
-            cam_target = cruise_target_kph(
+            # Camera-enforcement cap: the lower of the approach ease toward a
+            # camera/section start and the continuous hold while inside a section
+            # (trajectcontrole). Both gate under EuropilotCameraEasing in the planner.
+            cam_approach = cruise_target_kph(
                 camera_distance_m=cam_distance, camera_limit=cam_limit,
                 fused_limit_kph=limit, v_ego_kph=v_ego_kph,
             )
+            section_cap = section_hold_kph(section_limit)
+            cam_caps = [t for t in (cam_approach, section_cap) if t is not None]
+            cam_target = min(cam_caps) if cam_caps else None
             # Size the arrival speed to the roundabout, but never above the road
             # limit (if we know one) -- you don't approach a 30-zone roundabout at 48.
             rb_comfort = roundabout_approach_kph(rb_kind, rb_radius)

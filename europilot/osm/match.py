@@ -188,6 +188,21 @@ def _heading_ok(road: Road, pose: tuple[float, float], heading: float | None) ->
     return _undirected_delta(seg, heading) <= MAX_BEARING_DELTA_DEG
 
 
+def _section_limit(road: Road) -> int:
+    """Enforced km/h if this road is INSIDE an average-speed section, else 0.
+
+    trajectcontrole is enforced on the AVERAGE over the whole section, so the
+    gateway attaches the section to every enforced way. Being matched to such a
+    way therefore means we are inside the section -> the caller holds the cap
+    continuously (not just a dip at the start). Falls back to the road's posted
+    limit when the section itself carries no explicit maxspeed; tightest wins if
+    overlapping sections attach to one road.
+    """
+    limits = [(c.maxspeed or road.maxspeed or 0) for c in road.cameras if c.kind == "section"]
+    limits = [lim for lim in limits if lim and lim > 0]
+    return min(limits) if limits else 0
+
+
 def _advisory(road: Road, distance_m: float, pose: tuple[float, float],
               heading: float | None) -> Advisory:
     cam = next_camera_ahead(pose, heading, road)
@@ -208,6 +223,7 @@ def _advisory(road: Road, distance_m: float, pose: tuple[float, float],
         camera_distance_m=cam[0] if cam else None,
         camera_limit=cam[1] if cam else None,
         camera_kind=cam[2] if cam else "",
+        section_limit=_section_limit(road),
         roundabout_distance_m=rb[0] if rb else None,
         roundabout_kind=rb[1] if rb else "",
         roundabout_radius_m=rb[2] if rb else 0,
