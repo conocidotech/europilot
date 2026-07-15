@@ -24,12 +24,15 @@ Merge-safe: new file; the only upstream edit is one process_config line.
 """
 
 import json
+import os
 import threading
 import time
 import urllib.request
+from collections import deque
 
 from openpilot.common.params import Params
 from openpilot.common.swaglog import cloudlog
+from europilot.ease_events import EaseEventTracker
 from europilot.loopwatch import LoopWatch
 from europilot.osm.client import gateway_host
 
@@ -249,6 +252,22 @@ def post_telemetry(host: str, payload: dict) -> None:
         resp.read()
 
 
+# Durable per-device ease-event log (survives reboots). The authoritative record
+# for the ride history; the telemetry `events` field is only a best-effort live
+# push. On /data so it isn't on the tiny system partitions.
+EASE_EVENTS_PATH = "/data/media/0/europilot/ease_events.jsonl"
+
+
+def _append_ease_event(dongle_id: str, ev: dict) -> None:
+    """Append one ease event to the on-device log (best-effort, never fatal)."""
+    try:
+        os.makedirs(os.path.dirname(EASE_EVENTS_PATH), exist_ok=True)
+        with open(EASE_EVENTS_PATH, "a") as f:
+            f.write(json.dumps({"dongle_id": dongle_id, **ev}) + "\n")
+    except Exception:
+        cloudlog.exception("europilot_heartbeatd: ease-event log write failed")
+
+
 def _make_submaster():
     """A SubMaster for telemetry, or None if the msgq layer is unavailable.
 
@@ -315,6 +334,8 @@ def main() -> None:
     sm = _make_submaster()
     poster = _Poster(host)
     poster.start()
+    tracker = EaseEventTracker()
+    recent_events: deque = deque(maxlen=8)   # last few events, re-sent so a dropped post doesn't lose them
     watch = LoopWatch("heartbeatd", budget_s=2.0)   # loop period is 1s; flag real stalls
     cloudlog.info("europilot_heartbeatd starting (host=%s, telemetry=%s)", host, sm is not None)
 
@@ -343,6 +364,20 @@ def main() -> None:
                     dongle_id = _as_str(params.get("DongleId"))
                     frame = collect_telemetry(dongle_id, sm)
                     if frame is not None:
+                        # Reduce the live easing to discrete ride-history events.
+                        easing = frame.get("easing")
+                        ev = tracker.update(
+                            t=time.monotonic(),
+                            reason=easing["reason"] if easing else "none",
+                            target_kph=easing["target_kph"] if easing else -1,
+                            lat=frame.get("lat"), lon=frame.get("lon"),
+                            v_kph=(frame.get("speed_mps") or 0.0) * 3.6,
+                        )
+                        if ev is not None:
+                            _append_ease_event(dongle_id, ev)
+                            recent_events.append(ev)
+                        if recent_events:
+                            frame["events"] = list(recent_events)
                         poster.submit_telemetry(frame)
             except Exception:
                 cloudlog.exception("europilot_heartbeatd telemetry tick failed; will retry")
