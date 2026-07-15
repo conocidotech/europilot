@@ -43,6 +43,7 @@ def _roundabout(rb) -> Roundabout:
         lat=rb.point.lat / COORD_SCALE,
         lon=rb.point.lon / COORD_SCALE,
         kind=str(rb.kind),
+        radius_m=rb.radiusM,
     )
 
 

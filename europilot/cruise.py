@@ -28,9 +28,33 @@ START_MARGIN_M = 40.0
 MAX_TRIGGER_M = 800.0
 # Don't nag when essentially already at the limit.
 SPEED_HYSTERESIS_KPH = 3.0
-# Comfortable speed to arrive at a roundabout with. A roundabout carries no
-# posted limit, so this is the target the ease-off aims for (tunable).
-ROUNDABOUT_COMFORT_KPH = 30
+# Sensible speed to ARRIVE at a roundabout with (for a calm hand-over -- the car
+# does not drive the roundabout). Sized to the roundabout: a big one is neared
+# faster than a mini. Not the posted limit; capped to it in speed_limit.py.
+ROUNDABOUT_MINI_KPH = 20            # mini-roundabout / unknown size
+ROUNDABOUT_SMALL_KPH = 20           # smallest ringed roundabout
+ROUNDABOUT_LARGE_KPH = 50           # large multi-lane roundabout
+ROUNDABOUT_SMALL_RADIUS_M = 10.0    # at/below this radius -> SMALL
+ROUNDABOUT_LARGE_RADIUS_M = 35.0    # at/above this radius -> LARGE
+
+
+def roundabout_approach_kph(kind: str, radius_m: int) -> int:
+    """Sensible arrival speed for a roundabout, sized by its radius (km/h).
+
+    A mini (or unknown radius) gets a fixed low speed; a ringed roundabout scales
+    linearly from SMALL to LARGE between the radius anchors, rounded to 5 km/h.
+    Purely a device-side policy, so it can be tuned without re-baking tiles.
+    """
+    if kind == "mini" or not radius_m or radius_m <= 0:
+        return ROUNDABOUT_MINI_KPH
+    if radius_m <= ROUNDABOUT_SMALL_RADIUS_M:
+        v = ROUNDABOUT_SMALL_KPH
+    elif radius_m >= ROUNDABOUT_LARGE_RADIUS_M:
+        v = ROUNDABOUT_LARGE_KPH
+    else:
+        frac = (radius_m - ROUNDABOUT_SMALL_RADIUS_M) / (ROUNDABOUT_LARGE_RADIUS_M - ROUNDABOUT_SMALL_RADIUS_M)
+        v = ROUNDABOUT_SMALL_KPH + (ROUNDABOUT_LARGE_KPH - ROUNDABOUT_SMALL_KPH) * frac
+    return int(round(v / 5.0)) * 5
 
 
 def easing_distance_m(v_ego_kph: float, limit_kph: int) -> float:
@@ -60,7 +84,7 @@ def cruise_target_kph(*, camera_distance_m: float | None, camera_limit: int | No
 
 
 def roundabout_target_kph(*, roundabout_distance_m: float | None, v_ego_kph: float,
-                          comfort_kph: int = ROUNDABOUT_COMFORT_KPH) -> int | None:
+                          comfort_kph: int = ROUNDABOUT_MINI_KPH) -> int | None:
     """km/h to cap cruise at approaching a roundabout, or None for no easing.
 
     Same shape and safety as cruise_target_kph: only ever lowers, fires only for

@@ -142,7 +142,10 @@ class LongitudinalPlanner:
     if not reset_state and not sm['carState'].gasPressed and sm.valid['euSpeedLimit']:
       if self._eu_camera_easing and sm['euSpeedLimit'].cruiseTarget > 0:
         v_cruise = min(v_cruise, sm['euSpeedLimit'].cruiseTarget * CV.KPH_TO_MS)
-      if self._eu_roundabout_easing and sm['euSpeedLimit'].roundaboutTarget > 0:
+      # Roundabout easing yields to the driver taking over for the roundabout:
+      # released the moment they apply steering (not just the gas).
+      if (self._eu_roundabout_easing and sm['euSpeedLimit'].roundaboutTarget > 0
+          and not sm['carState'].steeringPressed):
         v_cruise = min(v_cruise, sm['euSpeedLimit'].roundaboutTarget * CV.KPH_TO_MS)
 
     self.mpc.set_weights(prev_accel_constraint, personality=sm['selfdriveState'].personality)

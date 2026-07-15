@@ -59,6 +59,7 @@ def normalize_roundabout(rb: dict) -> dict:
     return {
         "point": [_scale(rb["lat"]), _scale(rb["lon"])],
         "kind": _ROUNDABOUT_KIND_ENUM.get(rb.get("kind"), "roundabout"),
+        "radiusM": _u8(rb.get("radius_m")),
     }
 
 
@@ -180,6 +181,7 @@ def to_capnp_bytes(norm: dict, *, generated_at_unix_s: int = 0) -> bytes:
             rb_list[k].point.lat = rbn["point"][0]
             rb_list[k].point.lon = rbn["point"][1]
             rb_list[k].kind = rbn["kind"]
+            rb_list[k].radiusM = rbn["radiusM"]
     return tile.to_bytes()
 
 
@@ -224,6 +226,6 @@ def from_capnp_bytes(data: bytes) -> dict:
                 "cameras": [{"point": [c.point.lat, c.point.lon],
                              "maxspeed": c.maxspeed, "kind": str(c.kind)} for c in r.cameras],
                 "roundabouts": [{"point": [rb.point.lat, rb.point.lon],
-                                 "kind": str(rb.kind)} for rb in r.roundabouts],
+                                 "kind": str(rb.kind), "radiusM": rb.radiusM} for rb in r.roundabouts],
             } for r in tile.roads],
         }

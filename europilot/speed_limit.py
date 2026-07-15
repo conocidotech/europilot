@@ -19,7 +19,7 @@ Merge-safe: this file is new and does not modify upstream openpilot logic.
 
 from europilot.rsa import speed_limit_from_can, RSA1_ADDR
 from europilot.advisories import mandatory_speed, advisory_speed
-from europilot.cruise import cruise_target_kph, roundabout_target_kph
+from europilot.cruise import cruise_target_kph, roundabout_approach_kph, roundabout_target_kph
 
 RATE_HZ = 5.0
 SERVICE = "euSpeedLimit"
@@ -132,6 +132,8 @@ def main():
             cam_distance = None
             cam_limit = None
             rb_distance = None
+            rb_kind = ""
+            rb_radius = 0
             if sm.valid["euMapAdvisory"] and sm.recv_frame["euMapAdvisory"] > 0:
                 adv = sm["euMapAdvisory"]
                 if adv.valid:
@@ -143,6 +145,8 @@ def main():
                         cam_limit = adv.cameraLimit if adv.cameraLimit > 0 else None
                     if adv.roundaboutDistance >= 0:
                         rb_distance = adv.roundaboutDistance
+                        rb_kind = adv.roundaboutKind
+                        rb_radius = adv.roundaboutRadiusM if adv.roundaboutRadiusM > 0 else 0
 
             limit, source = fuse_speed_limit(
                 ndw_mandatory=mandatory_speed(signs),
@@ -161,8 +165,14 @@ def main():
                 camera_distance_m=cam_distance, camera_limit=cam_limit,
                 fused_limit_kph=limit, v_ego_kph=v_ego_kph,
             )
+            # Size the arrival speed to the roundabout, but never above the road
+            # limit (if we know one) -- you don't approach a 30-zone roundabout at 48.
+            rb_comfort = roundabout_approach_kph(rb_kind, rb_radius)
+            if limit and limit > 0:
+                rb_comfort = min(rb_comfort, limit)
             rb_target = roundabout_target_kph(
                 roundabout_distance_m=rb_distance, v_ego_kph=v_ego_kph,
+                comfort_kph=rb_comfort,
             )
 
             m = messaging.new_message(SERVICE)

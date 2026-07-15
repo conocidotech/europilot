@@ -97,8 +97,8 @@ def next_camera_ahead(pose: tuple[float, float], heading: float | None,
 
 
 def next_roundabout_ahead(pose: tuple[float, float], heading: float | None,
-                          road: Road) -> tuple[float, str] | None:
-    """(distance_m, kind) of the nearest roundabout ahead on this road.
+                          road: Road) -> tuple[float, str, int] | None:
+    """(distance_m, kind, radius_m) of the nearest roundabout ahead on this road.
 
     Same shape and fail-safe as next_camera_ahead: needs a heading to tell ahead
     from behind, and the entry node must project onto the road. Returns None when
@@ -118,7 +118,7 @@ def next_roundabout_ahead(pose: tuple[float, float], heading: float | None,
         return None
     s_pose, _ = _project(pts, cum, _to_xy(ref, pose))
 
-    best: tuple[float, str] | None = None
+    best: tuple[float, str, int] | None = None
     for rb in road.roundabouts:
         s_rb, off = _project(pts, cum, _to_xy(ref, (rb.lat, rb.lon)))
         if off > ROUNDABOUT_MAX_OFFSET_M:
@@ -127,7 +127,7 @@ def next_roundabout_ahead(pose: tuple[float, float], heading: float | None,
         if ahead <= 0:
             continue
         if best is None or ahead < best[0]:
-            best = (round(ahead, 1), rb.kind)
+            best = (round(ahead, 1), rb.kind, rb.radius_m)
     return best
 
 
@@ -173,6 +173,7 @@ def _advisory(road: Road, distance_m: float, pose: tuple[float, float],
         camera_kind=cam[2] if cam else "",
         roundabout_distance_m=rb[0] if rb else None,
         roundabout_kind=rb[1] if rb else "",
+        roundabout_radius_m=rb[2] if rb else 0,
     )
 
 

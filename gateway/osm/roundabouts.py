@@ -18,10 +18,30 @@ is a posted limit.
 """
 
 from gateway.osm import tags as osm_tags
+from gateway.osm.geo import meters_between
+from gateway.osm.grid import centroid
+
+# Radius is baked so the device can pick a sensible APPROACH speed per roundabout
+# (a big roundabout is neared faster than a mini). Clamped to the UInt8 wire field;
+# anything past this already maps to the max approach speed device-side.
+_MAX_RADIUS_M = 255
 
 
-def _roundabout(lat: float, lon: float, kind: str) -> dict:
-    return {"lat": lat, "lon": lon, "kind": kind}
+def _roundabout(lat: float, lon: float, kind: str, radius_m: int) -> dict:
+    return {"lat": lat, "lon": lon, "kind": kind, "radius_m": radius_m}
+
+
+def _ring_radius_m(ring_coords: list[tuple[float, float]]) -> int:
+    """Mean distance from the ring's centroid to its nodes, in metres (rounded).
+
+    Robust for the roughly-circular carriageway of a roundabout; 0 if degenerate.
+    """
+    pts = [p for p in ring_coords if p]
+    if len(pts) < 3:
+        return 0
+    c = centroid(pts)
+    r = sum(meters_between(c, p) for p in pts) / len(pts)
+    return min(_MAX_RADIUS_M, max(0, round(r)))
 
 
 def _node_to_drivable_ways(data) -> dict[int, list]:
@@ -40,9 +60,9 @@ def roundabouts_by_way(data) -> dict[int, list[dict]]:
     node_to_ways = _node_to_drivable_ways(data)
     out: dict[int, list[dict]] = {}
 
-    def attach(way_id: int, lat: float, lon: float, kind: str) -> None:
+    def attach(way_id: int, lat: float, lon: float, kind: str, radius_m: int) -> None:
         pts = out.setdefault(way_id, [])
-        entry = _roundabout(lat, lon, kind)
+        entry = _roundabout(lat, lon, kind, radius_m)
         if entry not in pts:   # a road touches a ring once; guard against dupes
             pts.append(entry)
 
@@ -50,6 +70,7 @@ def roundabouts_by_way(data) -> dict[int, list[dict]]:
     for ring in data.ways:
         if ring.tags.get("junction") != "roundabout":
             continue
+        radius_m = _ring_radius_m(data.coords(ring.node_ids))
         for nid in ring.node_ids:
             if nid not in data.nodes:
                 continue
@@ -57,14 +78,15 @@ def roundabouts_by_way(data) -> dict[int, list[dict]]:
             for way in node_to_ways.get(nid, []):
                 if way.id == ring.id:
                     continue   # you are already on the roundabout
-                attach(way.id, lat, lon, "roundabout")
+                attach(way.id, lat, lon, "roundabout", radius_m)
 
     # 2) highway=mini_roundabout nodes -> every drivable way through the node.
+    # A mini has no ring geometry, so radius 0 -> the device uses its mini default.
     for nid, node_tags in data.node_tags.items():
         if node_tags.get("highway") != "mini_roundabout" or nid not in data.nodes:
             continue
         lat, lon = data.nodes[nid]
         for way in node_to_ways.get(nid, []):
-            attach(way.id, lat, lon, "mini")
+            attach(way.id, lat, lon, "mini", 0)
 
     return out
