@@ -59,6 +59,7 @@ class UIState:
         "rawAudioData",
         "euSpeedLimit",
         "euMapAdvisory",
+        "euNdwMatrixSigns",
       ]
     )
 
