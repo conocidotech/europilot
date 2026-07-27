@@ -235,3 +235,10 @@ jobs:
         with:
           name: ui-report-${{ inputs.run_number || '1' }}-${{ github.event_name == 'push' && github.ref == 'refs/heads/master' && 'master' || github.event.number }}
           path: selfdrive/ui/tests/diff/report
+          # De UI-reports zijn de grootste post in de Actions-opslag van de hele
+          # organisatie: 165 stuks, samen 1,8 GB, op de standaard bewaartermijn.
+          # Toen die quota vol raakte, faalde het uploaden van artifacts in ANDERE
+          # repo's van conocidotech -- een build daar sneuvelde op iets waar hij zelf
+          # niets aan kon doen. Een UI-report is na een paar dagen niet meer
+          # interessant; de PR-review waarvoor hij bestaat is dan allang gedaan.
+          retention-days: 7

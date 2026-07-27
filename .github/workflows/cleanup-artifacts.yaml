@@ -1,0 +1,65 @@
+name: cleanup artifacts
+
+# Ruimt oude Actions-artifacts op. Nodig omdat de opslagquota ORGANISATIEBREED is:
+# toen die vol raakte, faalde het uploaden van artifacts in andere repo's van
+# conocidotech — daar sneuvelde een build op iets waar hij zelf niets aan kon doen.
+#
+# Deze repo hield 165 artifacts van samen 1,8 GB, vrijwel allemaal ui-report-*.
+# `retention-days` op de upload-stap voorkomt nieuwe ophoping, maar bestaande
+# artifacts houden hun oorspronkelijke termijn — vandaar deze opruiming.
+#
+# Draait wekelijks, en is handmatig te starten. Handmatig staat hij standaard in
+# DRY RUN: dan zie je eerst wat er weg zou gaan voordat er iets verdwijnt.
+
+on:
+  schedule:
+    - cron: '0 4 * * 1'
+  workflow_dispatch:
+    inputs:
+      days:
+        description: Artifacts ouder dan dit aantal dagen opruimen
+        type: string
+        default: '7'
+      dry_run:
+        description: Alleen tonen wat er weg zou gaan
+        type: boolean
+        default: true
+
+permissions:
+  actions: write   # verwijderen van artifacts; de ingebouwde GITHUB_TOKEN volstaat
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Oude artifacts opruimen
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          DAYS: ${{ inputs.days || '7' }}
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
+        run: |
+          set -euo pipefail
+          CUTOFF=$(date -u -d "-${DAYS} days" +%s)
+          echo "Grens: alles van vóór $(date -u -d "@${CUTOFF}" '+%Y-%m-%d %H:%M') UTC"
+          [ "$DRY_RUN" = "true" ] && echo "DRY RUN — er wordt niets verwijderd."
+
+          gh api --paginate "repos/${REPO}/actions/artifacts?per_page=100" \
+            --jq '.artifacts[] | select(.expired == false) | [.id, .created_at, .size_in_bytes, .name] | @tsv' > /tmp/arts.tsv
+
+          TOTAL=0; FREED=0; KEPT=0
+          while IFS=$'\t' read -r id created size name; do
+            TOTAL=$((TOTAL+1))
+            AGE=$(date -u -d "$created" +%s)
+            if [ "$AGE" -ge "$CUTOFF" ]; then KEPT=$((KEPT+1)); continue; fi
+            printf '  %-42s %s  %6.1f MB\n' "$name" "${created:0:10}" "$(echo "$size/1048576" | bc -l)"
+            if [ "$DRY_RUN" != "true" ]; then
+              gh api -X DELETE "repos/${REPO}/actions/artifacts/${id}" >/dev/null || echo "    (verwijderen mislukt, overgeslagen)"
+            fi
+            FREED=$((FREED+size))
+          done < /tmp/arts.tsv
+
+          echo
+          echo "Bekeken: $TOTAL | behouden: $KEPT | opgeruimd: $((TOTAL-KEPT))"
+          printf 'Vrijgemaakt: %.2f GB\n' "$(echo "$FREED/1000000000" | bc -l)"
