@@ -51,6 +51,9 @@ def advisory_to_fields(a: Advisory) -> dict:
         "cameraDistance": a.camera_distance_m if a.camera_distance_m is not None else -1.0,
         "cameraLimit": _clamp_kmh(a.camera_limit),
         "cameraKind": a.camera_kind or "",
+        "roundaboutDistance": a.roundabout_distance_m if a.roundabout_distance_m is not None else -1.0,
+        "roundaboutKind": a.roundabout_kind or "",
+        "roundaboutRadiusM": a.roundabout_radius_m or 0,
     }
 
 

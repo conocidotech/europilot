@@ -1,10 +1,13 @@
-"""Camera-approach cruise easing -- the ONE place Europilot influences control.
+"""Approach cruise easing -- the ONE place Europilot influences control.
 
-Pure decision logic: given the next camera ahead (from euMapAdvisory), the fused
-limit, and the ego speed, decide the km/h to cap the ACC set speed at, or None
-(no easing). europilot/speed_limit.py publishes it as euSpeedLimit.cruiseTarget;
-the longitudinal planner caps cruise to it with a min() when the opt-in toggle is
-on and openpilot is engaged.
+Pure decision logic: given what's ahead (from euMapAdvisory) and the ego speed,
+decide the km/h to cap the ACC set speed at, or None (no easing). Two triggers,
+each opt-in and each a gentle ease-off:
+  - a speed camera / trajectcontrole -> ease toward the enforced limit;
+  - a roundabout -> ease toward a comfortable roundabout speed.
+europilot/speed_limit.py takes the lower of the two and publishes it as
+euSpeedLimit.cruiseTarget; the longitudinal planner caps cruise to it with a
+min() when the relevant opt-in toggle is on and openpilot is engaged.
 
 Design (kept safe and boring):
   - Only ever LOWERS toward a real posted limit -- a min(), never a speed-up.
@@ -25,6 +28,33 @@ START_MARGIN_M = 40.0
 MAX_TRIGGER_M = 800.0
 # Don't nag when essentially already at the limit.
 SPEED_HYSTERESIS_KPH = 3.0
+# Sensible speed to ARRIVE at a roundabout with (for a calm hand-over -- the car
+# does not drive the roundabout). Sized to the roundabout: a big one is neared
+# faster than a mini. Not the posted limit; capped to it in speed_limit.py.
+ROUNDABOUT_MINI_KPH = 20            # mini-roundabout / unknown size
+ROUNDABOUT_SMALL_KPH = 20           # smallest ringed roundabout
+ROUNDABOUT_LARGE_KPH = 50           # large multi-lane roundabout
+ROUNDABOUT_SMALL_RADIUS_M = 10.0    # at/below this radius -> SMALL
+ROUNDABOUT_LARGE_RADIUS_M = 35.0    # at/above this radius -> LARGE
+
+
+def roundabout_approach_kph(kind: str, radius_m: int) -> int:
+    """Sensible arrival speed for a roundabout, sized by its radius (km/h).
+
+    A mini (or unknown radius) gets a fixed low speed; a ringed roundabout scales
+    linearly from SMALL to LARGE between the radius anchors, rounded to 5 km/h.
+    Purely a device-side policy, so it can be tuned without re-baking tiles.
+    """
+    if kind == "mini" or not radius_m or radius_m <= 0:
+        return ROUNDABOUT_MINI_KPH
+    if radius_m <= ROUNDABOUT_SMALL_RADIUS_M:
+        v = ROUNDABOUT_SMALL_KPH
+    elif radius_m >= ROUNDABOUT_LARGE_RADIUS_M:
+        v = ROUNDABOUT_LARGE_KPH
+    else:
+        frac = (radius_m - ROUNDABOUT_SMALL_RADIUS_M) / (ROUNDABOUT_LARGE_RADIUS_M - ROUNDABOUT_SMALL_RADIUS_M)
+        v = ROUNDABOUT_SMALL_KPH + (ROUNDABOUT_LARGE_KPH - ROUNDABOUT_SMALL_KPH) * frac
+    return int(round(v / 5.0)) * 5
 
 
 def easing_distance_m(v_ego_kph: float, limit_kph: int) -> float:
@@ -50,4 +80,23 @@ def cruise_target_kph(*, camera_distance_m: float | None, camera_limit: int | No
         return None   # already at/below the enforced limit -- nothing to ease
     if camera_distance_m <= easing_distance_m(v_ego_kph, limit):
         return limit
+    return None
+
+
+def roundabout_target_kph(*, roundabout_distance_m: float | None, v_ego_kph: float,
+                          comfort_kph: int = ROUNDABOUT_MINI_KPH) -> int | None:
+    """km/h to cap cruise at approaching a roundabout, or None for no easing.
+
+    Same shape and safety as cruise_target_kph: only ever lowers, fires only for
+    a roundabout AHEAD (the matcher's job) within a bounded distance and only if
+    we're above the comfortable roundabout speed, and starts at the last
+    comfortable moment so the MPC's comfort-clipped taper does the actual slowing.
+    """
+    if (roundabout_distance_m is None or roundabout_distance_m < 0
+            or roundabout_distance_m > MAX_TRIGGER_M):
+        return None
+    if comfort_kph <= 0 or v_ego_kph <= comfort_kph + SPEED_HYSTERESIS_KPH:
+        return None
+    if roundabout_distance_m <= easing_distance_m(v_ego_kph, comfort_kph):
+        return comfort_kph
     return None

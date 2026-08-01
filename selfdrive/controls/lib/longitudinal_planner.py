@@ -64,8 +64,9 @@ class LongitudinalPlanner:
     self.a_desired_trajectory = np.zeros(CONTROL_N)
     self.j_desired_trajectory = np.zeros(CONTROL_N)
 
-    # Europilot: opt-in camera-approach cruise easing (off by default). Read once.
+    # Europilot: opt-in approach cruise easing (off by default). Read once.
     self._eu_camera_easing = Params().get_bool("EuropilotCameraEasing")
+    self._eu_roundabout_easing = Params().get_bool("EuropilotRoundaboutEasing")
 
   @staticmethod
   def parse_model(model_msg):
@@ -132,13 +133,20 @@ class LongitudinalPlanner:
     if force_slow_decel:
       v_cruise = 0.0
 
-    # Europilot camera easing (opt-in): cap cruise toward the enforced limit when
-    # a speed camera is ahead. A min(), so it can only slow, never speed up; the
-    # MPC clips any cruise target to a comfort decel, so this is always a gentle
-    # taper, never a hard brake. Engaged-only, and the gas pedal releases it.
-    if self._eu_camera_easing and not reset_state and not sm['carState'].gasPressed:
-      if sm.valid['euSpeedLimit'] and sm['euSpeedLimit'].cruiseTarget > 0:
+    # Europilot easing (opt-in): cap cruise toward the enforced limit approaching
+    # a speed camera, and/or toward a comfortable speed approaching a roundabout.
+    # A min(), so it can only slow, never speed up; the MPC clips any cruise
+    # target to a comfort decel, so this is always a gentle taper, never a hard
+    # brake. Engaged-only, and the gas pedal releases it. Each source has its own
+    # opt-in toggle, so they gate independently.
+    if not reset_state and not sm['carState'].gasPressed and sm.valid['euSpeedLimit']:
+      if self._eu_camera_easing and sm['euSpeedLimit'].cruiseTarget > 0:
         v_cruise = min(v_cruise, sm['euSpeedLimit'].cruiseTarget * CV.KPH_TO_MS)
+      # Roundabout easing yields to the driver taking over for the roundabout:
+      # released the moment they apply steering (not just the gas).
+      if (self._eu_roundabout_easing and sm['euSpeedLimit'].roundaboutTarget > 0
+          and not sm['carState'].steeringPressed):
+        v_cruise = min(v_cruise, sm['euSpeedLimit'].roundaboutTarget * CV.KPH_TO_MS)
 
     self.mpc.set_weights(prev_accel_constraint, personality=sm['selfdriveState'].personality)
     self.mpc.set_cur_state(self.v_desired_filter.x, self.a_desired)

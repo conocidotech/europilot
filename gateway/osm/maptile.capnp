@@ -52,6 +52,19 @@ struct Camera {
   kind @2 :CameraKind;
 }
 
+enum RoundaboutKind {
+  roundabout @0;   # junction=roundabout carriageway
+  mini @1;         # highway=mini_roundabout (painted)
+}
+
+# A roundabout reached from this road, at its entry node. Advisory only: the
+# device eases toward a comfortable approach speed, there is no posted limit here.
+struct Roundabout {
+  point @0 :Point;   # the entry node where this road meets the roundabout
+  kind @1 :RoundaboutKind;
+  radiusM @2 :UInt8;  # ring radius in metres (0 for mini); sizes the approach speed
+}
+
 struct Road {
   id @0 :UInt64;
   roadClass @1 :RoadClass;
@@ -73,6 +86,9 @@ struct Road {
 
   # speed cameras / trajectcontrole on THIS road (gateway/osm/cameras.py)
   cameras @15 :List(Camera);
+
+  # roundabouts entered from THIS road (gateway/osm/roundabouts.py)
+  roundabouts @16 :List(Roundabout);
 }
 
 struct MapTile {

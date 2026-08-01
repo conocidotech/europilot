@@ -18,6 +18,15 @@ class Camera:
 
 
 @dataclass(frozen=True)
+class Roundabout:
+    """A roundabout reached from a road, at its entry node."""
+    lat: float
+    lon: float
+    kind: str                   # "roundabout" | "mini"
+    radius_m: int               # ring radius in metres (0 for mini) -> approach speed
+
+
+@dataclass(frozen=True)
 class Road:
     id: int
     road_class: str
@@ -35,6 +44,7 @@ class Road:
     residential_score: float
     comfort_speed: int | None   # advisory km/h, None to defer to posted
     cameras: tuple[Camera, ...] = field(default_factory=tuple)
+    roundabouts: tuple[Roundabout, ...] = field(default_factory=tuple)
 
 
 @dataclass(frozen=True)
@@ -54,6 +64,9 @@ class Advisory:
     camera_distance_m: float | None = None   # along-road meters to the next camera ahead
     camera_limit: int | None = None          # enforced km/h there, None if unknown
     camera_kind: str = ""                     # "fixed" | "section" | "" (none)
+    roundabout_distance_m: float | None = None  # along-road meters to the next roundabout ahead
+    roundabout_kind: str = ""                    # "roundabout" | "mini" | "" (none)
+    roundabout_radius_m: int = 0                 # ring radius (0 = mini/unknown) -> approach speed
 
     @staticmethod
     def none() -> "Advisory":

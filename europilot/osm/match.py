@@ -19,6 +19,7 @@ from gateway.osm.geo import bearing, point_to_polyline_m, point_to_segment_m
 MAX_LATERAL_M = 20.0          # must be this close to count as "on" the road
 MAX_BEARING_DELTA_DEG = 45.0  # heading vs road direction, undirected
 CAMERA_MAX_OFFSET_M = 30.0    # a camera must project this close to the road to count
+ROUNDABOUT_MAX_OFFSET_M = 20.0  # an entry node sits on the road, so keep this tight
 EARTH_R = 6_371_000.0
 
 
@@ -95,6 +96,41 @@ def next_camera_ahead(pose: tuple[float, float], heading: float | None,
     return best
 
 
+def next_roundabout_ahead(pose: tuple[float, float], heading: float | None,
+                          road: Road) -> tuple[float, str, int] | None:
+    """(distance_m, kind, radius_m) of the nearest roundabout ahead on this road.
+
+    Same shape and fail-safe as next_camera_ahead: needs a heading to tell ahead
+    from behind, and the entry node must project onto the road. Returns None when
+    there is nothing ahead -- better a missed ease-off than one for a roundabout
+    already behind us.
+    """
+    if heading is None or not road.roundabouts or len(road.points) < 2:
+        return None
+    ref = road.points[0]
+    pts = [_to_xy(ref, p) for p in road.points]
+    cum = [0.0]
+    for i in range(len(pts) - 1):
+        cum.append(cum[-1] + math.hypot(pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1]))
+
+    forward = _travels_forward(road, pose, heading)
+    if forward is None:
+        return None
+    s_pose, _ = _project(pts, cum, _to_xy(ref, pose))
+
+    best: tuple[float, str, int] | None = None
+    for rb in road.roundabouts:
+        s_rb, off = _project(pts, cum, _to_xy(ref, (rb.lat, rb.lon)))
+        if off > ROUNDABOUT_MAX_OFFSET_M:
+            continue
+        ahead = (s_rb - s_pose) if forward else (s_pose - s_rb)
+        if ahead <= 0:
+            continue
+        if best is None or ahead < best[0]:
+            best = (round(ahead, 1), rb.kind, rb.radius_m)
+    return best
+
+
 def _nearest_segment_bearing(road: Road, pose: tuple[float, float]) -> float | None:
     pts = road.points
     if len(pts) < 2:
@@ -119,6 +155,7 @@ def _heading_ok(road: Road, pose: tuple[float, float], heading: float | None) ->
 def _advisory(road: Road, distance_m: float, pose: tuple[float, float],
               heading: float | None) -> Advisory:
     cam = next_camera_ahead(pose, heading, road)
+    rb = next_roundabout_ahead(pose, heading, road)
     return Advisory(
         valid=True,
         road_id=road.id,
@@ -134,6 +171,9 @@ def _advisory(road: Road, distance_m: float, pose: tuple[float, float],
         camera_distance_m=cam[0] if cam else None,
         camera_limit=cam[1] if cam else None,
         camera_kind=cam[2] if cam else "",
+        roundabout_distance_m=rb[0] if rb else None,
+        roundabout_kind=rb[1] if rb else "",
+        roundabout_radius_m=rb[2] if rb else 0,
     )
 
 
